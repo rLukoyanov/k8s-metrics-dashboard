@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'local-k8s'
+    environment: 'dev'
+
+scrape_configs:
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Scrape mock k8s metrics
+  - job_name: 'kubernetes-pods'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['k8s-metrics-mock:8080']
+        labels:
+          cluster: 'local-k8s'
+          environment: 'dev'

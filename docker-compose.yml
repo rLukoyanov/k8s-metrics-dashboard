@@ -1,0 +1,57 @@
+services:
+  # Prometheus server
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - monitoring
+
+  # Mock k8s metrics exporter
+  k8s-metrics-mock:
+    image: node:18-alpine
+    container_name: k8s-metrics-mock
+    working_dir: /app
+    volumes:
+      - ./metrics-exporter:/app
+    command: node index.js
+    ports:
+      - "8080:8080"
+    networks:
+      - monitoring
+    environment:
+      - PORT=8080
+
+  # Backend API server
+  backend:
+    image: node:18-alpine
+    container_name: backend-api
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    command: sh -c "npm install && npm start"
+    ports:
+      - "3001:3001"
+    networks:
+      - monitoring
+    environment:
+      - PROMETHEUS_URL=http://prometheus:9090
+      - PORT=3001
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus_data:
+
+networks:
+  monitoring:
+    driver: bridge

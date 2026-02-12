@@ -1,3 +1,5 @@
+import axios from 'axios';
+
 const API_URL = '/api';
 
 // API Response Types
@@ -48,9 +50,8 @@ export interface PromQLResponse {
  */
 export const fetchNamespaces = async (): Promise<string[]> => {
   try {
-    const response = await fetch(`${API_URL}/namespaces`);
-    const data: NamespacesResponse = await response.json();
-    return data.namespaces || [];
+    const response = await axios.get<NamespacesResponse>(`${API_URL}/namespaces`);
+    return response.data.namespaces || [];
   } catch (error) {
     console.error('Error fetching namespaces:', error);
     throw new Error('Failed to fetch namespaces');
@@ -62,9 +63,11 @@ export const fetchNamespaces = async (): Promise<string[]> => {
  */
 export const fetchDeployments = async (namespace: string): Promise<string[]> => {
   try {
-    const response = await fetch(`${API_URL}/deployments?namespace=${namespace}`);
-    const data: DeploymentsResponse = await response.json();
-    return data.deployments || [];
+    const response = await axios.get<DeploymentsResponse>(
+      `${API_URL}/deployments`,
+      { params: { namespace } }
+    );
+    return response.data.deployments || [];
   } catch (error) {
     console.error('Error fetching deployments:', error);
     throw new Error('Failed to fetch deployments');
@@ -79,11 +82,11 @@ export const fetchContainers = async (
   deployment: string
 ): Promise<string[]> => {
   try {
-    const response = await fetch(
-      `${API_URL}/containers?namespace=${namespace}&deployment=${deployment}`
+    const response = await axios.get<ContainersResponse>(
+      `${API_URL}/containers`,
+      { params: { namespace, deployment } }
     );
-    const data: ContainersResponse = await response.json();
-    return data.containers || [];
+    return response.data.containers || [];
   } catch (error) {
     console.error('Error fetching containers:', error);
     throw new Error('Failed to fetch containers');
@@ -100,11 +103,11 @@ export const fetchMetrics = async (
   containers: string[]
 ): Promise<MetricsResponse> => {
   try {
-    const response = await fetch(
-      `${API_URL}/metrics?namespace=${namespace}&deployment=${deployment}&metric=${metric}&containers=${containers.join(',')}`
+    const response = await axios.get<MetricsResponse>(
+      `${API_URL}/metrics`,
+      { params: { namespace, deployment, metric, containers: containers.join(',') } }
     );
-    const data: MetricsResponse = await response.json();
-    return data;
+    return response.data;
   } catch (error) {
     console.error('Error fetching metrics:', error);
     throw new Error('Failed to fetch metrics');
@@ -119,13 +122,11 @@ export const executePromQLQuery = async (
   type: 'range' | 'instant' = 'range'
 ): Promise<PromQLResponse> => {
   try {
-    const response = await fetch(`${API_URL}/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, type })
-    });
-    const data: PromQLResponse = await response.json();
-    return data;
+    const response = await axios.post<PromQLResponse>(
+      `${API_URL}/query`,
+      { query, type }
+    );
+    return response.data;
   } catch (error) {
     console.error('Error executing PromQL query:', error);
     throw new Error('Failed to execute PromQL query');

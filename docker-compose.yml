@@ -16,14 +16,12 @@ services:
     networks:
       - monitoring
 
-  # Mock k8s metrics exporter
+  # Mock k8s metrics exporter (Go)
   k8s-metrics-mock:
-    image: node:18-alpine
+    build:
+      context: ./metrics-exporter-go
+      dockerfile: Dockerfile
     container_name: k8s-metrics-mock
-    working_dir: /app
-    volumes:
-      - ./metrics-exporter:/app
-    command: node index.js
     ports:
       - "8080:8080"
     networks:
@@ -31,14 +29,12 @@ services:
     environment:
       - PORT=8080
 
-  # Backend API server
+  # Backend API server (Go)
   backend:
-    image: node:18-alpine
+    build:
+      context: ./backend-go
+      dockerfile: Dockerfile
     container_name: backend-api
-    working_dir: /app
-    volumes:
-      - ./backend:/app
-    command: sh -c "npm install && npm start"
     ports:
       - "3001:3001"
     networks:

@@ -12,7 +12,7 @@ import {
   Filler
 } from 'chart.js';
 import CustomPromQLCharts from './CustomPromQLCharts';
-import { fetchNamespaces, fetchDeployments, fetchContainers, fetchMetrics } from '../api/api';
+import { fetchNamespaces, fetchDeployments, fetchContainers, fetchPods, fetchMetrics } from '../api/api';
 
 ChartJS.register(
   CategoryScale,
@@ -28,9 +28,11 @@ ChartJS.register(
 const KubernetesMetricsDashboard = () => {
   const [namespaces, setNamespaces] = useState([]);
   const [deployments, setDeployments] = useState([]);
+  const [pods, setPods] = useState([]);
   
   const [selectedNamespace, setSelectedNamespace] = useState('');
   const [selectedDeployment, setSelectedDeployment] = useState('');
+  const [selectedPod, setSelectedPod] = useState('');
   const [excludedContainers, setExcludedContainers] = useState([]);
   const [availableContainers, setAvailableContainers] = useState([]);
   const [selectedMetric, setSelectedMetric] = useState('cpu');
@@ -72,10 +74,33 @@ const KubernetesMetricsDashboard = () => {
     loadDeployments();
   }, [selectedNamespace]);
 
+  // Fetch pods when deployment changes
+  useEffect(() => {
+    const loadPods = async () => {
+      if (!selectedNamespace || !selectedDeployment) {
+        setPods([]);
+        return;
+      }
+      
+      try {
+        const podsList = await fetchPods(selectedNamespace, selectedDeployment);
+        setPods(podsList);
+        // Автоматически выбираем первый под если он есть
+        if (podsList.length > 0 && !selectedPod) {
+          setSelectedPod(podsList[0]);
+        }
+      } catch (error) {
+        console.error('Error fetching pods:', error);
+        setError('Failed to fetch pods');
+      }
+    };
+    loadPods();
+  }, [selectedNamespace, selectedDeployment]);
+
   // Fetch containers when deployment changes
   useEffect(() => {
     const loadContainers = async () => {
-      if (!selectedNamespace || !selectedDeployment) {
+      if (!selectedNamespace || !selectedDeployment || !selectedPod) {
         setAvailableContainers([]);
         return;
       }
@@ -89,12 +114,12 @@ const KubernetesMetricsDashboard = () => {
       }
     };
     loadContainers();
-  }, [selectedNamespace, selectedDeployment]);
+  }, [selectedNamespace, selectedDeployment, selectedPod]);
 
   // Fetch container limits from Prometheus
   useEffect(() => {
     const loadContainerLimits = async () => {
-      if (!selectedNamespace || !selectedDeployment) {
+      if (!selectedNamespace || !selectedDeployment || !selectedPod) {
         setContainerLimits(null);
         return;
       }
@@ -197,12 +222,12 @@ const KubernetesMetricsDashboard = () => {
     const interval = setInterval(loadContainerLimits, 30000); // Обновляем каждые 30 секунд
 
     return () => clearInterval(interval);
-  }, [selectedNamespace, selectedDeployment, availableContainers]);
+  }, [selectedNamespace, selectedDeployment, selectedPod, availableContainers]);
 
   // Fetch metrics from Prometheus
   useEffect(() => {
     const loadMetrics = async () => {
-      if (!selectedNamespace || !selectedDeployment) {
+      if (!selectedNamespace || !selectedDeployment || !selectedPod) {
         setMetricsData(null);
         return;
       }
@@ -226,7 +251,8 @@ const KubernetesMetricsDashboard = () => {
           selectedNamespace,
           selectedDeployment,
           selectedMetric,
-          activeContainers
+          activeContainers,
+          selectedPod
         );
 
         if (data.datasets) {
@@ -295,7 +321,7 @@ const KubernetesMetricsDashboard = () => {
     const interval = setInterval(loadMetrics, 15000); // Refresh every 15 seconds
 
     return () => clearInterval(interval);
-  }, [selectedNamespace, selectedDeployment, selectedMetric, excludedContainers, availableContainers]);
+  }, [selectedNamespace, selectedDeployment, selectedPod, selectedMetric, excludedContainers, availableContainers]);
 
   // Метрики с разными PromQL запросами
   const metricsConfig = {
@@ -548,6 +574,7 @@ const KubernetesMetricsDashboard = () => {
                 onChange={(e) => {
                   setSelectedNamespace(e.target.value);
                   setSelectedDeployment('');
+                  setSelectedPod('');
                   setExcludedContainers([]);
                 }}
                 className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
@@ -568,6 +595,7 @@ const KubernetesMetricsDashboard = () => {
                 value={selectedDeployment}
                 onChange={(e) => {
                   setSelectedDeployment(e.target.value);
+                  setSelectedPod('');
                   setExcludedContainers([]);
                 }}
                 disabled={!selectedNamespace}
@@ -580,6 +608,27 @@ const KubernetesMetricsDashboard = () => {
               </select>
             </div>
 
+            {/* Pod Select */}
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-2">
+                Pod
+              </label>
+              <select
+                value={selectedPod}
+                onChange={(e) => {
+                  setSelectedPod(e.target.value);
+                  setExcludedContainers([]);
+                }}
+                disabled={!selectedDeployment}
+                className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+              >
+                <option value="">Выберите pod</option>
+                {pods.map(pod => (
+                  <option key={pod} value={pod}>{pod}</option>
+                ))}
+              </select>
+            </div>
+
             {/* Metric Select */}
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-2">
@@ -588,7 +637,7 @@ const KubernetesMetricsDashboard = () => {
               <select
                 value={selectedMetric}
                 onChange={(e) => setSelectedMetric(e.target.value)}
-                disabled={!selectedDeployment}
+                disabled={!selectedPod}
                 className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
               >
                 {Object.entries(metricsConfig).map(([key, metric]) => (
@@ -596,19 +645,19 @@ const KubernetesMetricsDashboard = () => {
                 ))}
               </select>
             </div>
+          </div>
 
-            {/* Status Info */}
-            <div className="flex items-end">
+          {/* Status Info */}
+          {selectedNamespace && selectedDeployment && selectedPod && (
+            <div className="mt-4">
               <div className="w-full px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-xs text-blue-600 font-medium">Текущий контекст</p>
                 <p className="text-sm text-blue-800 font-semibold">
-                  {selectedNamespace && selectedDeployment 
-                    ? `${selectedNamespace}/${selectedDeployment}`
-                    : 'Не выбрано'}
+                  {`${selectedNamespace}/${selectedDeployment}/${selectedPod}`}
                 </p>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Containers Filter */}
           {availableContainers.length > 0 && (
@@ -678,7 +727,7 @@ const KubernetesMetricsDashboard = () => {
         </div>
 
         {/* Main Chart */}
-        {selectedNamespace && selectedDeployment && (
+        {selectedNamespace && selectedDeployment && selectedPod && (
           <div className="space-y-6">
             {/* Container Metrics Chart */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">

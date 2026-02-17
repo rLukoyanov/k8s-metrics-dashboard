@@ -49,8 +49,10 @@ func generateMetrics() string {
 				containerList = []string{"main-container"}
 			}
 
+			// Генерируем имя пода один раз для деплоймента
+			podName := fmt.Sprintf("%s-%s", deployment, randomString(7))
+
 			for _, container := range containerList {
-				podName := fmt.Sprintf("%s-%s", deployment, randomString(7))
 
 				// CPU metrics
 				cpuUsage := randomValue(0.1, 2.5)

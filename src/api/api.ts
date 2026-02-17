@@ -15,6 +15,10 @@ export interface ContainersResponse {
   containers: string[];
 }
 
+export interface PodsResponse {
+  pods: string[];
+}
+
 export interface MetricValue {
   timestamp: number;
   value: number;
@@ -94,18 +98,42 @@ export const fetchContainers = async (
 };
 
 /**
+ * Fetch pods for a specific namespace and deployment
+ */
+export const fetchPods = async (
+  namespace: string,
+  deployment: string
+): Promise<string[]> => {
+  try {
+    const response = await axios.get<PodsResponse>(
+      `${API_URL}/pods`,
+      { params: { namespace, deployment } }
+    );
+    return response.data.pods || [];
+  } catch (error) {
+    console.error('Error fetching pods:', error);
+    throw new Error('Failed to fetch pods');
+  }
+};
+
+/**
  * Fetch metrics for specific namespace, deployment, metric type and containers
  */
 export const fetchMetrics = async (
   namespace: string,
   deployment: string,
   metric: string,
-  containers: string[]
+  containers: string[],
+  pod?: string
 ): Promise<MetricsResponse> => {
   try {
+    const params: any = { namespace, deployment, metric, containers: containers.join(',') };
+    if (pod) {
+      params.pod = pod;
+    }
     const response = await axios.get<MetricsResponse>(
       `${API_URL}/metrics`,
-      { params: { namespace, deployment, metric, containers: containers.join(',') } }
+      { params }
     );
     return response.data;
   } catch (error) {

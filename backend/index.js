@@ -98,10 +98,33 @@ app.get('/api/containers', async (req, res) => {
   }
 });
 
+// Get pods for a deployment
+app.get('/api/pods', async (req, res) => {
+  try {
+    const { namespace, deployment } = req.query;
+    
+    if (!namespace || !deployment) {
+      return res.status(400).json({ error: 'Namespace and deployment parameters are required' });
+    }
+    
+    const query = `group by (pod) (container_cpu_usage_seconds_total{namespace="${namespace}",deployment="${deployment}"})`;
+    const result = await queryPrometheus(query);
+    
+    if (result.status === 'success') {
+      const pods = result.data.result.map(item => item.metric.pod);
+      res.json({ pods: [...new Set(pods)].filter(Boolean).sort() });
+    } else {
+      res.status(500).json({ error: 'Failed to fetch pods' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get metrics data
 app.get('/api/metrics', async (req, res) => {
   try {
-    const { namespace, deployment, metric, containers, duration = '5m' } = req.query;
+    const { namespace, deployment, metric, containers, pod, duration = '5m' } = req.query;
     
     if (!namespace || !deployment || !metric) {
       return res.status(400).json({ error: 'Namespace, deployment, and metric parameters are required' });
@@ -115,25 +138,26 @@ app.get('/api/metrics', async (req, res) => {
     const containerFilter = containerList.length > 0 
       ? `container=~"${containerList.join('|')}"` 
       : 'container!=""';
+    const podFilter = pod ? `pod="${pod}"` : 'pod!=""';
     
     switch (metric) {
       case 'cpu':
-        promqlQuery = `sum(rate(container_cpu_usage_seconds_total{namespace="${namespace}",deployment="${deployment}",${containerFilter}}[${duration}])) by (container, pod)`;
+        promqlQuery = `sum(rate(container_cpu_usage_seconds_total{namespace="${namespace}",deployment="${deployment}",${containerFilter},${podFilter}}[${duration}])) by (container, pod)`;
         break;
       case 'memory':
-        promqlQuery = `container_memory_working_set_bytes{namespace="${namespace}",deployment="${deployment}",${containerFilter}}`;
+        promqlQuery = `container_memory_working_set_bytes{namespace="${namespace}",deployment="${deployment}",${containerFilter},${podFilter}}`;
         break;
       case 'network_rx':
-        promqlQuery = `sum(rate(container_network_receive_bytes_total{namespace="${namespace}",deployment="${deployment}",${containerFilter}}[${duration}])) by (container, pod)`;
+        promqlQuery = `sum(rate(container_network_receive_bytes_total{namespace="${namespace}",deployment="${deployment}",${containerFilter},${podFilter}}[${duration}])) by (container, pod)`;
         break;
       case 'network_tx':
-        promqlQuery = `sum(rate(container_network_transmit_bytes_total{namespace="${namespace}",deployment="${deployment}",${containerFilter}}[${duration}])) by (container, pod)`;
+        promqlQuery = `sum(rate(container_network_transmit_bytes_total{namespace="${namespace}",deployment="${deployment}",${containerFilter},${podFilter}}[${duration}])) by (container, pod)`;
         break;
       case 'disk_read':
-        promqlQuery = `sum(rate(container_fs_reads_bytes_total{namespace="${namespace}",deployment="${deployment}",${containerFilter}}[${duration}])) by (container, pod)`;
+        promqlQuery = `sum(rate(container_fs_reads_bytes_total{namespace="${namespace}",deployment="${deployment}",${containerFilter},${podFilter}}[${duration}])) by (container, pod)`;
         break;
       case 'disk_write':
-        promqlQuery = `sum(rate(container_fs_writes_bytes_total{namespace="${namespace}",deployment="${deployment}",${containerFilter}}[${duration}])) by (container, pod)`;
+        promqlQuery = `sum(rate(container_fs_writes_bytes_total{namespace="${namespace}",deployment="${deployment}",${containerFilter},${podFilter}}[${duration}])) by (container, pod)`;
         break;
       default:
         return res.status(400).json({ error: 'Invalid metric type' });
@@ -212,7 +236,8 @@ app.listen(PORT, () => {
   console.log(`  GET  /api/namespaces`);
   console.log(`  GET  /api/deployments?namespace=<name>`);
   console.log(`  GET  /api/containers?namespace=<name>&deployment=<name>`);
-  console.log(`  GET  /api/metrics?namespace=<name>&deployment=<name>&metric=<type>&containers=<list>`);
+  console.log(`  GET  /api/pods?namespace=<name>&deployment=<name>`);
+  console.log(`  GET  /api/metrics?namespace=<name>&deployment=<name>&metric=<type>&containers=<list>&pod=<name>`);
   console.log(`  POST /api/query`);
   console.log(`  GET  /health`);
 });

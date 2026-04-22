@@ -1,0 +1,23 @@
+server:
+  port: 2112
+
+metrics:
+  - name: custom_metric_temperature
+    type: gauge
+    help: "Temperature metric"
+    labels:
+      sensor: "sensor-1"
+      location: "room"
+    mode: random
+    min: 20
+    max: 30
+    interval_ms: 1000
+
+  - name: custom_metric_requests
+    type: counter
+    help: "Request counter"
+    labels:
+      service: "api"
+    mode: increment
+    step: 5
+    interval_ms: 2000

@@ -1,127 +1,121 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
 	"time"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var (
-	namespaces = []string{"default", "kube-system", "production", "staging", "development"}
-	deployments = []string{"nginx", "api-server", "frontend", "backend", "redis", "postgresql"}
-	containers = map[string][]string{
-		"nginx":      {"nginx-main", "nginx-sidecar", "nginx-exporter"},
-		"api-server": {"api", "auth", "cache", "logger"},
-		"frontend":   {"react-app", "nginx-static", "node-exporter"},
-		"backend":    {"spring-boot", "postgres-exporter", "redis-client"},
-		"redis":      {"redis-server", "redis-sentinel", "redis-exporter"},
-		"postgresql": {"postgres", "pgbouncer", "backup-agent"},
-	}
-)
+type Config struct {
+	Server struct {
+		Port int `yaml:"port"`
+	} `yaml:"server"`
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
+	Metrics []MetricConfig `yaml:"metrics"`
 }
 
-func randomValue(min, max float64) float64 {
-	return min + rand.Float64()*(max-min)
+type MetricConfig struct {
+	Name       string            `yaml:"name"`
+	Type       string            `yaml:"type"`
+	Help       string            `yaml:"help"`
+	Labels     map[string]string `yaml:"labels"`
+	Mode       string            `yaml:"mode"` // random | increment
+	Min        float64           `yaml:"min"`
+	Max        float64           `yaml:"max"`
+	Step       float64           `yaml:"step"`
+	IntervalMS int               `yaml:"interval_ms"`
 }
 
-func randomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))]
-	}
-	return string(b)
-}
-
-func generateMetrics() string {
-	var metrics string
-
-	for _, namespace := range namespaces {
-		for _, deployment := range deployments {
-			containerList := containers[deployment]
-			if containerList == nil {
-				containerList = []string{"main-container"}
-			}
-
-			// Генерируем имя пода один раз для деплоймента
-			podName := fmt.Sprintf("%s-%s", deployment, randomString(7))
-
-			for _, container := range containerList {
-
-				// CPU metrics
-				cpuUsage := randomValue(0.1, 2.5)
-				metrics += fmt.Sprintf("container_cpu_usage_seconds_total{namespace=\"%s\",pod=\"%s\",container=\"%s\",deployment=\"%s\"} %.4f\n",
-					namespace, podName, container, deployment, cpuUsage)
-
-				cpuThrottled := randomValue(0, 0.5)
-				metrics += fmt.Sprintf("container_cpu_cfs_throttled_seconds_total{namespace=\"%s\",pod=\"%s\",container=\"%s\",deployment=\"%s\"} %.4f\n",
-					namespace, podName, container, deployment, cpuThrottled)
-
-				// Memory metrics
-				memoryUsage := randomValue(100000000, 500000000) // 100MB - 500MB
-				metrics += fmt.Sprintf("container_memory_working_set_bytes{namespace=\"%s\",pod=\"%s\",container=\"%s\",deployment=\"%s\"} %.0f\n",
-					namespace, podName, container, deployment, memoryUsage)
-
-				memoryCache := randomValue(10000000, 50000000) // 10MB - 50MB
-				metrics += fmt.Sprintf("container_memory_cache{namespace=\"%s\",pod=\"%s\",container=\"%s\",deployment=\"%s\"} %.0f\n",
-					namespace, podName, container, deployment, memoryCache)
-
-				// Network metrics
-				networkRx := randomValue(1000, 10000)
-				metrics += fmt.Sprintf("container_network_receive_bytes_total{namespace=\"%s\",pod=\"%s\",container=\"%s\",deployment=\"%s\"} %.0f\n",
-					namespace, podName, container, deployment, networkRx)
-
-				networkTx := randomValue(500, 8000)
-				metrics += fmt.Sprintf("container_network_transmit_bytes_total{namespace=\"%s\",pod=\"%s\",container=\"%s\",deployment=\"%s\"} %.0f\n",
-					namespace, podName, container, deployment, networkTx)
-
-				// Disk metrics
-				diskRead := randomValue(100, 5000)
-				metrics += fmt.Sprintf("container_fs_reads_bytes_total{namespace=\"%s\",pod=\"%s\",container=\"%s\",deployment=\"%s\"} %.0f\n",
-					namespace, podName, container, deployment, diskRead)
-
-				diskWrite := randomValue(50, 3000)
-				metrics += fmt.Sprintf("container_fs_writes_bytes_total{namespace=\"%s\",pod=\"%s\",container=\"%s\",deployment=\"%s\"} %.0f\n",
-					namespace, podName, container, deployment, diskWrite)
-			}
-		}
+func loadConfig(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
 	}
 
-	return metrics
-}
-
-func metricsHandler(w http.ResponseWriter, r *http.Request) {
-	metrics := generateMetrics()
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, metrics)
-}
-
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"status":"healthy"}`)
+	var cfg Config
+	err = yaml.Unmarshal(data, &cfg)
+	return &cfg, err
 }
 
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	cfg, err := loadConfig("config.yaml")
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	http.HandleFunc("/metrics", metricsHandler)
-	http.HandleFunc("/health", healthHandler)
+	for _, m := range cfg.Metrics {
+		go runMetric(m)
+	}
 
-	log.Printf("🎯 K8s Metrics Mock Exporter running on port %s\n", port)
-	log.Printf("📊 Metrics available at http://localhost:%s/metrics\n", port)
+	http.Handle("/metrics", promhttp.Handler())
 
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatal(err)
+	addr := ":" + fmt.Sprint(cfg.Server.Port)
+	log.Println("Starting server on", addr)
+	log.Fatal(http.ListenAndServe(addr, nil))
+}
+
+func runMetric(cfg MetricConfig) {
+	labels := make([]string, 0, len(cfg.Labels))
+	for k := range cfg.Labels {
+		labels = append(labels, k)
+	}
+
+	var metricVec interface{}
+
+	switch cfg.Type {
+	case "gauge":
+		metricVec = prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: cfg.Name,
+				Help: cfg.Help,
+			},
+			labels,
+		)
+	case "counter":
+		metricVec = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: cfg.Name,
+				Help: cfg.Help,
+			},
+			labels,
+		)
+	default:
+		log.Println("Unknown metric type:", cfg.Type)
+		return
+	}
+
+	prometheus.MustRegister(metricVec.(prometheus.Collector))
+
+	labelValues := make([]string, 0, len(cfg.Labels))
+	for _, v := range cfg.Labels {
+		labelValues = append(labelValues, v)
+	}
+
+	ticker := time.NewTicker(time.Duration(cfg.IntervalMS) * time.Millisecond)
+	defer ticker.Stop()
+
+	var current float64
+
+	for range ticker.C {
+		switch cfg.Mode {
+		case "random":
+			current = cfg.Min + rand.Float64()*(cfg.Max-cfg.Min)
+		case "increment":
+			current += cfg.Step
+		}
+
+		switch m := metricVec.(type) {
+		case *prometheus.GaugeVec:
+			m.WithLabelValues(labelValues...).Set(current)
+		case *prometheus.CounterVec:
+			m.WithLabelValues(labelValues...).Add(cfg.Step)
+		}
 	}
 }

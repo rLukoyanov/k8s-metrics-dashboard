@@ -1,0 +1,24 @@
+server:
+  port: 9100
+
+metrics:
+  - name: new_metric_1777281052330
+    type: gauge
+    help: "New metric"
+    labels:
+      instance: "localhost"
+    mode: random
+    min: 0
+    max: 100
+    step: 1
+    interval_ms: 1000
+  - name: new_metric_1777281054995
+    type: gauge
+    help: "New metric"
+    labels:
+      instance: "localhost"
+    mode: random
+    min: 0
+    max: 100
+    step: 1
+    interval_ms: 1000

@@ -1,0 +1,935 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prometheus Exporter UI</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+    <style>
+      :root {
+        --bg0: #0e0f11;
+        --bg1: #16181c;
+        --bg2: #1e2128;
+        --bg3: #272b33;
+        --border: #2e333d;
+        --text0: #e8eaf0;
+        --text1: #9aa0b0;
+        --text2: #5a6070;
+        --green: #1d9e75;
+        --green-dim: #0f3d2e;
+        --blue: #378add;
+        --blue-dim: #0d2a4a;
+        --amber: #e09a20;
+        --amber-dim: #3d2a08;
+        --red: #e24b4a;
+        --red-dim: #3d1212;
+        --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+        --sans: "Inter", system-ui, sans-serif;
+        --radius: 8px;
+        --radius-lg: 12px;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        background: var(--bg0);
+        color: var(--text0);
+        font-family: var(--sans);
+        font-size: 14px;
+        min-height: 100vh;
+      }
+
+      /* ── Layout ── */
+      .app {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        min-height: 100vh;
+      }
+
+      /* ── Sidebar ── */
+      .sidebar {
+        background: var(--bg1);
+        border-right: 1px solid var(--border);
+        padding: 20px 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow-y: auto;
+      }
+      .sidebar-header {
+        padding: 0 20px 20px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 12px;
+      }
+      .logo {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--text2);
+        margin-bottom: 6px;
+      }
+      .status-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--red);
+        transition: background 0.3s;
+        flex-shrink: 0;
+      }
+      .dot.alive {
+        background: var(--green);
+        animation: pulse 2s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+      .status-text {
+        font-size: 12px;
+        color: var(--text1);
+        font-family: var(--mono);
+      }
+
+      .sidebar-section {
+        padding: 8px 12px 4px;
+        font-size: 10px;
+        color: var(--text2);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 20px;
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--text1);
+        border-left: 2px solid transparent;
+        transition: all 0.15s;
+        user-select: none;
+      }
+      .nav-item:hover {
+        background: var(--bg2);
+        color: var(--text0);
+      }
+      .nav-item.active {
+        border-left-color: var(--green);
+        background: var(--bg2);
+        color: var(--text0);
+      }
+      .nav-item .name {
+        font-family: var(--mono);
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 130px;
+      }
+      .type-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      .sidebar-actions {
+        padding: 16px 20px;
+        margin-top: auto;
+        border-top: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      /* ── Main ── */
+      .main {
+        padding: 28px 32px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 28px;
+      }
+      .page-title {
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--text0);
+        margin-bottom: 4px;
+      }
+      .page-sub {
+        font-size: 13px;
+        color: var(--text1);
+        font-family: var(--mono);
+      }
+      .topbar-actions {
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+
+      /* ── Metrics grid ── */
+      .metrics-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 12px;
+        margin-bottom: 28px;
+      }
+      .metric-card {
+        background: var(--bg1);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 16px;
+        transition: border-color 0.15s;
+      }
+      .metric-card:hover {
+        border-color: var(--bg3);
+      }
+      .metric-card .mlabel {
+        font-size: 11px;
+        color: var(--text2);
+        font-family: var(--mono);
+        margin-bottom: 6px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .metric-card .mval {
+        font-size: 24px;
+        font-weight: 600;
+        font-family: var(--mono);
+        color: var(--text0);
+      }
+      .metric-card .msub {
+        font-size: 11px;
+        color: var(--text2);
+        margin-top: 4px;
+      }
+
+      /* ── Config editor ── */
+      .section {
+        background: var(--bg1);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        margin-bottom: 12px;
+        overflow: hidden;
+      }
+      .section-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        cursor: pointer;
+        user-select: none;
+        transition: background 0.15s;
+      }
+      .section-head:hover {
+        background: var(--bg2);
+      }
+      .section-head .sname {
+        font-family: var(--mono);
+        font-size: 13px;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .badge {
+        font-size: 10px;
+        padding: 2px 7px;
+        border-radius: 4px;
+        font-family: var(--mono);
+        font-weight: 600;
+      }
+      .badge-gauge {
+        background: var(--green-dim);
+        color: var(--green);
+      }
+      .badge-counter {
+        background: var(--blue-dim);
+        color: var(--blue);
+      }
+      .badge-mode {
+        background: var(--bg3);
+        color: var(--text1);
+      }
+      .chevron {
+        color: var(--text2);
+        font-size: 12px;
+        transition: transform 0.2s;
+      }
+      .chevron.open {
+        transform: rotate(180deg);
+      }
+
+      .section-body {
+        display: none;
+        padding: 16px;
+        border-top: 1px solid var(--border);
+      }
+      .section-body.open {
+        display: block;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .form-grid.three {
+        grid-template-columns: 1fr 1fr 1fr;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .field label {
+        font-size: 11px;
+        color: var(--text2);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .field input,
+      .field select {
+        background: var(--bg0);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 7px 10px;
+        font-size: 13px;
+        font-family: var(--mono);
+        color: var(--text0);
+        outline: none;
+        width: 100%;
+        transition: border-color 0.15s;
+      }
+      .field input:focus,
+      .field select:focus {
+        border-color: var(--green);
+      }
+      .field select option {
+        background: var(--bg1);
+      }
+
+      .chart-wrap {
+        position: relative;
+        height: 100px;
+        margin-top: 14px;
+        border-top: 1px solid var(--border);
+        padding-top: 14px;
+      }
+      .chart-label {
+        font-size: 10px;
+        color: var(--text2);
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .row-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 14px;
+        border-top: 1px solid var(--border);
+        padding-top: 14px;
+      }
+
+      /* ── Buttons ── */
+      .btn {
+        padding: 7px 14px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text1);
+        font-size: 12px;
+        font-family: var(--mono);
+        cursor: pointer;
+        transition: all 0.15s;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        background: var(--bg3);
+        color: var(--text0);
+        border-color: var(--text2);
+      }
+      .btn.primary {
+        border-color: var(--green);
+        color: var(--green);
+      }
+      .btn.primary:hover {
+        background: var(--green-dim);
+      }
+      .btn.danger {
+        border-color: var(--red);
+        color: var(--red);
+      }
+      .btn.danger:hover {
+        background: var(--red-dim);
+      }
+      .btn.blue {
+        border-color: var(--blue);
+        color: var(--blue);
+      }
+      .btn.blue:hover {
+        background: var(--blue-dim);
+      }
+      .btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      /* ── Add metric ── */
+      .add-card {
+        border: 1px dashed var(--border);
+        border-radius: var(--radius-lg);
+        padding: 18px;
+        text-align: center;
+        cursor: pointer;
+        color: var(--text2);
+        font-size: 13px;
+        transition: all 0.15s;
+        font-family: var(--mono);
+      }
+      .add-card:hover {
+        border-color: var(--green);
+        color: var(--green);
+        background: var(--green-dim);
+      }
+
+      /* ── Toast ── */
+      #toast {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: var(--bg2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 10px 16px;
+        font-size: 13px;
+        font-family: var(--mono);
+        color: var(--text0);
+        opacity: 0;
+        transform: translateY(8px);
+        transition: all 0.25s;
+        pointer-events: none;
+        z-index: 999;
+      }
+      #toast.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      #toast.ok {
+        border-color: var(--green);
+        color: var(--green);
+      }
+      #toast.err {
+        border-color: var(--red);
+        color: var(--red);
+      }
+
+      /* ── Config section ── */
+      .server-card {
+        background: var(--bg1);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 16px;
+        margin-bottom: 24px;
+      }
+      .server-card-title {
+        font-size: 11px;
+        color: var(--text2);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 12px;
+      }
+      .endpoint-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .endpoint-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .ep-method {
+        font-family: var(--mono);
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: var(--bg3);
+        color: var(--text1);
+      }
+      .ep-url {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--blue);
+      }
+
+      .section-title {
+        font-size: 11px;
+        color: var(--text2);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">prometheus-exporter</div>
+          <div class="status-row">
+            <div class="dot" id="statusDot"></div>
+            <span class="status-text" id="statusText">connecting…</span>
+          </div>
+        </div>
+        <div class="sidebar-section">metrics</div>
+        <div id="navList"></div>
+        <div class="sidebar-actions">
+          <button class="btn primary" onclick="applyConfig()">
+            apply config
+          </button>
+          <button class="btn" onclick="copyYaml()">copy yaml</button>
+        </div>
+      </aside>
+
+      <!-- Main -->
+      <main class="main">
+        <div class="topbar">
+          <div>
+            <div class="page-title">Exporter Dashboard</div>
+            <div class="page-sub" id="portLabel">localhost:9100</div>
+          </div>
+          <div class="topbar-actions">
+            <button
+              class="btn"
+              onclick="document.getElementById('baseUrlInput').focus()"
+            >
+              ⚙ API URL
+            </button>
+            <input
+              id="baseUrlInput"
+              class="btn"
+              style="width: 200px; text-align: left"
+              value="http://localhost:9100"
+              onchange="setBaseUrl(this.value)"
+            />
+          </div>
+        </div>
+
+        <!-- Live summary cards -->
+        <div class="section-title">live values</div>
+        <div class="metrics-summary" id="summaryGrid"></div>
+
+        <!-- Endpoints info -->
+        <div class="server-card">
+          <div class="server-card-title">api endpoints</div>
+          <div class="endpoint-list">
+            <div class="endpoint-row">
+              <span class="ep-method">GET</span
+              ><span class="ep-url" id="ep1"></span>
+            </div>
+            <div class="endpoint-row">
+              <span class="ep-method">PUT</span
+              ><span class="ep-url" id="ep2"></span>
+            </div>
+            <div class="endpoint-row">
+              <span class="ep-method">GET</span
+              ><span class="ep-url" id="ep3"></span>
+            </div>
+            <div class="endpoint-row">
+              <span class="ep-method">GET</span
+              ><span class="ep-url" id="ep4"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metric configs -->
+        <div class="section-title">metric configuration</div>
+        <div id="metricsList"></div>
+        <div class="add-card" onclick="addMetric()">+ add metric</div>
+      </main>
+    </div>
+
+    <div id="toast"></div>
+
+    <script>
+      // ── State ─────────────────────────────────────────────────────────────────────
+      let BASE = "http://localhost:2112";
+      let config = { server: { port: 9100 }, metrics: [] };
+      let liveData = {};
+      let charts = {};
+      let openSections = {};
+      let pollTimer = null;
+      let activeNav = null;
+
+      function setBaseUrl(url) {
+        BASE = url.replace(/\/$/, "");
+        updateEndpointLabels();
+        fetchConfig();
+      }
+
+      function updateEndpointLabels() {
+        document.getElementById("portLabel").textContent = BASE.replace(
+          "http://",
+          "",
+        );
+        document.getElementById("ep1").textContent = BASE + "/api/config";
+        document.getElementById("ep2").textContent = BASE + "/api/config";
+        document.getElementById("ep3").textContent = BASE + "/api/live";
+        document.getElementById("ep4").textContent = BASE + "/metrics";
+      }
+
+      // ── API calls ─────────────────────────────────────────────────────────────────
+      async function fetchConfig() {
+        try {
+          const r = await fetch(BASE + "/api/config");
+          if (!r.ok) throw new Error(r.status);
+          config = await r.json();
+          setAlive(true);
+          renderAll();
+        } catch (e) {
+          setAlive(false);
+        }
+      }
+
+      async function fetchLive() {
+        try {
+          const r = await fetch(BASE + "/api/live");
+          if (!r.ok) throw new Error(r.status);
+          const data = await r.json();
+          setAlive(true);
+          data.forEach((m) => {
+            liveData[m.name] = m;
+          });
+          updateSummaryCards();
+          updateAllCharts();
+        } catch (e) {
+          setAlive(false);
+        }
+      }
+
+      async function applyConfig() {
+        try {
+          const r = await fetch(BASE + "/api/config", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(config),
+          });
+          if (!r.ok) throw new Error(await r.text());
+          toast("Config applied", "ok");
+          liveData = {};
+        } catch (e) {
+          toast("Error: " + e.message, "err");
+        }
+      }
+
+      // ── Helpers ───────────────────────────────────────────────────────────────────
+      function setAlive(alive) {
+        const dot = document.getElementById("statusDot");
+        const txt = document.getElementById("statusText");
+        dot.classList.toggle("alive", alive);
+        txt.textContent = alive ? BASE.replace("http://", "") : "offline";
+      }
+
+      function fmt(v, name) {
+        if (name && name.includes("bytes"))
+          return (v / 1048576).toFixed(1) + " MB";
+        if (Math.abs(v) > 1e6) return (v / 1e6).toFixed(2) + "M";
+        if (Math.abs(v) > 1e3) return (v / 1e3).toFixed(2) + "K";
+        return parseFloat(v.toFixed(3)).toString();
+      }
+
+      function toast(msg, type = "ok") {
+        const el = document.getElementById("toast");
+        el.textContent = msg;
+        el.className = "show " + type;
+        setTimeout(() => (el.className = ""), 2200);
+      }
+
+      function copyYaml() {
+        const lines = [
+          "server:",
+          `  port: ${config.server?.port || 9100}`,
+          "",
+          "metrics:",
+        ];
+        (config.metrics || []).forEach((m) => {
+          lines.push(`  - name: ${m.name}`);
+          lines.push(`    type: ${m.type}`);
+          lines.push(`    help: "${m.help}"`);
+          lines.push(`    labels:`);
+          Object.entries(m.labels || {}).forEach(([k, v]) =>
+            lines.push(`      ${k}: "${v}"`),
+          );
+          lines.push(`    mode: ${m.mode}`);
+          lines.push(`    min: ${m.min}`);
+          lines.push(`    max: ${m.max}`);
+          lines.push(`    step: ${m.step}`);
+          lines.push(`    interval_ms: ${m.interval_ms}`);
+        });
+        navigator.clipboard
+          .writeText(lines.join("\n"))
+          .then(() => toast("YAML copied", "ok"));
+      }
+
+      // ── Render ────────────────────────────────────────────────────────────────────
+      function renderAll() {
+        renderNav();
+        renderSummaryCards();
+        renderMetricsList();
+      }
+
+      function renderNav() {
+        const list = document.getElementById("navList");
+        list.innerHTML = "";
+        (config.metrics || []).forEach((m, i) => {
+          const el = document.createElement("div");
+          el.className = "nav-item" + (activeNav === m.name ? " active" : "");
+          el.innerHTML = `
+      <span class="type-dot" style="background:${m.type === "gauge" ? "#1d9e75" : "#378add"}"></span>
+      <span class="name">${m.name}</span>`;
+          el.onclick = () => {
+            activeNav = m.name;
+            document
+              .getElementById("ms-" + i)
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            renderNav();
+          };
+          list.appendChild(el);
+        });
+      }
+
+      function renderSummaryCards() {
+        const g = document.getElementById("summaryGrid");
+        g.innerHTML = "";
+        (config.metrics || []).forEach((m) => {
+          const live = liveData[m.name];
+          const v = live ? fmt(live.current, m.name) : "—";
+          const card = document.createElement("div");
+          card.className = "metric-card";
+          card.id = "sc-" + m.name;
+          card.innerHTML = `<div class="mlabel">${m.name}</div><div class="mval" id="sv-${m.name}">${v}</div><div class="msub">${m.type} · ${m.mode}</div>`;
+          g.appendChild(card);
+        });
+      }
+
+      function updateSummaryCards() {
+        (config.metrics || []).forEach((m) => {
+          const live = liveData[m.name];
+          if (!live) return;
+          const el = document.getElementById("sv-" + m.name);
+          if (el) el.textContent = fmt(live.current, m.name);
+        });
+      }
+
+      function renderMetricsList() {
+        const list = document.getElementById("metricsList");
+        list.innerHTML = "";
+        (config.metrics || []).forEach((m, i) => {
+          const open = openSections[i];
+          const labelsStr = Object.entries(m.labels || {})
+            .map(([k, v]) => `${k}="${v}"`)
+            .join(", ");
+          const sec = document.createElement("div");
+          sec.className = "section";
+          sec.id = "ms-" + i;
+          sec.innerHTML = `
+      <div class="section-head" onclick="toggleSection(${i})">
+        <span class="badge ${m.type === "gauge" ? "badge-gauge" : "badge-counter"}">${m.type}</span>
+        <span class="sname">${m.name}</span>
+        <span class="badge badge-mode">${m.mode}</span>
+        <span class="chevron ${open ? "open" : ""}">▾</span>
+      </div>
+      <div class="section-body ${open ? "open" : ""}" id="sb-${i}">
+        <div class="form-grid">
+          <div class="field"><label>name</label><input value="${m.name}" oninput="updateMetric(${i},'name',this.value)"/></div>
+          <div class="field"><label>help</label><input value="${m.help || ""}" oninput="updateMetric(${i},'help',this.value)"/></div>
+        </div>
+        <div class="form-grid three">
+          <div class="field"><label>type</label>
+            <select onchange="updateMetric(${i},'type',this.value)">
+              <option value="gauge" ${m.type === "gauge" ? "selected" : ""}>gauge</option>
+              <option value="counter" ${m.type === "counter" ? "selected" : ""}>counter</option>
+            </select>
+          </div>
+          <div class="field"><label>mode</label>
+            <select onchange="updateMetric(${i},'mode',this.value)">
+              <option value="random" ${m.mode === "random" ? "selected" : ""}>random</option>
+              <option value="increment" ${m.mode === "increment" ? "selected" : ""}>increment</option>
+            </select>
+          </div>
+          <div class="field"><label>interval (ms)</label><input type="number" value="${m.interval_ms}" oninput="updateMetric(${i},'interval_ms',+this.value)"/></div>
+        </div>
+        <div class="form-grid three">
+          <div class="field"><label>min</label><input type="number" value="${m.min}" oninput="updateMetric(${i},'min',+this.value)"/></div>
+          <div class="field"><label>max</label><input type="number" value="${m.max}" oninput="updateMetric(${i},'max',+this.value)"/></div>
+          <div class="field"><label>step</label><input type="number" value="${m.step}" oninput="updateMetric(${i},'step',+this.value)"/></div>
+        </div>
+        <div class="field"><label>labels (key="value", comma-sep)</label><input value="${labelsStr}" oninput="updateLabels(${i},this.value)"/></div>
+        <div class="chart-wrap">
+          <div class="chart-label">live history (last 60 points)</div>
+          <div style="position:relative;height:80px;"><canvas id="chart-${i}" role="img" aria-label="Sparkline for ${m.name}"></canvas></div>
+        </div>
+        <div class="row-actions">
+          <button class="btn danger" onclick="removeMetric(${i})">remove</button>
+        </div>
+      </div>`;
+          list.appendChild(sec);
+          if (open) setTimeout(() => initChart(i), 50);
+        });
+      }
+
+      function toggleSection(i) {
+        openSections[i] = !openSections[i];
+        const body = document.getElementById("sb-" + i);
+        const chev = document.querySelector(`#ms-${i} .chevron`);
+        if (body) body.classList.toggle("open", openSections[i]);
+        if (chev) chev.classList.toggle("open", openSections[i]);
+        if (openSections[i]) setTimeout(() => initChart(i), 50);
+      }
+
+      function initChart(i) {
+        const m = config.metrics[i];
+        if (!m) return;
+        const canvas = document.getElementById("chart-" + i);
+        if (!canvas) return;
+        if (charts[i]) {
+          charts[i].destroy();
+          delete charts[i];
+        }
+        const color = m.type === "gauge" ? "#1d9e75" : "#378add";
+        const live = liveData[m.name];
+        const history = live ? live.history : [];
+        charts[i] = new Chart(canvas, {
+          type: "line",
+          data: {
+            labels: history.map((_, j) => j),
+            datasets: [
+              {
+                data: history,
+                borderColor: color,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                fill: true,
+                backgroundColor: color + "22",
+                tension: 0.3,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { display: false }, y: { display: false } },
+            animation: false,
+          },
+        });
+      }
+
+      function updateAllCharts() {
+        Object.keys(openSections).forEach((i) => {
+          if (!openSections[i]) return;
+          const m = config.metrics[i];
+          if (!m) return;
+          const live = liveData[m.name];
+          if (!live || !charts[i]) return;
+          charts[i].data.labels = live.history.map((_, j) => j);
+          charts[i].data.datasets[0].data = live.history;
+          charts[i].update("none");
+        });
+      }
+
+      // ── Config mutations ──────────────────────────────────────────────────────────
+      function updateMetric(i, field, value) {
+        if (!config.metrics[i]) return;
+        config.metrics[i][field] = value;
+      }
+
+      function updateLabels(i, str) {
+        const obj = {};
+        str.split(",").forEach((pair) => {
+          const eq = pair.indexOf("=");
+          if (eq < 0) return;
+          const k = pair.slice(0, eq).trim();
+          const v = pair
+            .slice(eq + 1)
+            .trim()
+            .replace(/^"|"$/g, "");
+          if (k) obj[k] = v;
+        });
+        config.metrics[i].labels = obj;
+      }
+
+      function addMetric() {
+        config.metrics.push({
+          name: "new_metric_" + Date.now(),
+          type: "gauge",
+          help: "New metric",
+          labels: { instance: "localhost" },
+          mode: "random",
+          min: 0,
+          max: 100,
+          step: 1,
+          interval_ms: 1000,
+        });
+        const newIdx = config.metrics.length - 1;
+        openSections[newIdx] = true;
+        renderAll();
+        setTimeout(
+          () =>
+            document
+              .getElementById("ms-" + newIdx)
+              ?.scrollIntoView({ behavior: "smooth" }),
+          50,
+        );
+      }
+
+      function removeMetric(i) {
+        if (charts[i]) {
+          charts[i].destroy();
+          delete charts[i];
+        }
+        delete openSections[i];
+        config.metrics.splice(i, 1);
+        // Rebuild open sections keys
+        const newOpen = {};
+        Object.keys(openSections).forEach((k) => {
+          const ki = parseInt(k);
+          if (ki < i) newOpen[ki] = openSections[k];
+          else if (ki > i) newOpen[ki - 1] = openSections[k];
+        });
+        openSections = newOpen;
+        renderAll();
+      }
+
+      // ── Init ──────────────────────────────────────────────────────────────────────
+      updateEndpointLabels();
+      fetchConfig();
+      setInterval(fetchLive, 1000);
+    </script>
+  </body>
+</html>

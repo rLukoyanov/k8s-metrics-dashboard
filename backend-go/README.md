@@ -1,37 +1,60 @@
-# Backend API Server (Go)
+# Load Test Orchestrator (Go + go-clean-template)
 
-REST API сервер на Go для интеграции с Prometheus.
+## Описание
 
-## Эндпоинты
+Небольшое приложение на Go, построенное по принципам `go-clean-template`.
 
-- `GET /api/namespaces` - Получить список namespaces
-- `GET /api/deployments?namespace=<name>` - Получить deployments для namespace
-- `GET /api/containers?namespace=<name>&deployment=<name>` - Получить контейнеры
-- `GET /api/metrics?namespace=<name>&deployment=<name>&metric=<type>&containers=<list>` - Получить метрики
-- `POST /api/query` - Выполнить кастомный PromQL запрос
-- `GET /health` - Health check
+### Задача приложения
 
-## Локальная разработка
+1. Получить REST-запрос от пользователя.
+2. Принять входную и выходную нагрузку (payloads).
+3. Сформировать тестовый план.
+4. Отправить тестовый план во внешнюю систему нагрузочного тестирования.
+5. Отслеживать статус выполнения теста.
+6. Отдавать статус пользователю через REST API.
+
+## Архитектура и структура
+
+- Clean Architecture (entities, usecases, repo, external, controller, scheduler, config)
+- In-memory repository (MVP)
+- REST API (создание теста, получение статуса)
+- Клиент внешней load-testing системы
+- Polling статусов
+
+## Запуск
 
 ```bash
-# Установить зависимости
-go mod download
-
-# Запустить сервер
-PROMETHEUS_URL=http://localhost:9090 go run main.go
+go run ./cmd/app
 ```
 
-## Docker
+## Пример .env
 
-```bash
-# Собрать образ
-docker build -t backend-go .
-
-# Запустить
-docker run -p 3001:3001 -e PROMETHEUS_URL=http://prometheus:9090 backend-go
+```
+HTTP_PORT=8080
+LOAD_SYSTEM_URL=http://localhost:9000
+STATUS_POLL_INTERVAL=30s
 ```
 
-## Переменные окружения
+## Roadmap
 
-- `PORT` - Порт сервера (по умолчанию: 3001)
-- `PROMETHEUS_URL` - URL Prometheus сервера (по умолчанию: http://localhost:9090)
+- [x] REST API
+- [x] In-memory repository
+- [x] Mock external system
+- [x] Status polling
+- [ ] PostgreSQL
+- [ ] Retries
+- [ ] Graceful shutdown
+- [ ] Docker-compose
+- [ ] Metrics
+- [ ] Auth
+- [ ] Webhook callbacks
+- [ ] Distributed tracing
+
+## Рекомендуемые библиотеки
+
+- gin-gonic/gin
+- jackc/pgx
+- google/uuid
+- samber/lo
+- uber-go/zap
+- prometheus/client_golang

@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>License Generator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f4f5f7;
+      --surface: #ffffff;
+      --border: #dde1e7;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --text: #1e2330;
+      --muted: #6b7280;
+      --code-bg: #f8f9fb;
+      --license-color: #2563eb;
+      --error-bg: #fef2f2;
+      --error-border: #fecaca;
+      --error-text: #b91c1c;
+      --radius: 8px;
+      --mono: 'Menlo', 'Consolas', 'Monaco', monospace;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 24px;
+      height: 56px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    header h1 { font-size: 16px; font-weight: 600; }
+    header p  { font-size: 13px; color: var(--muted); }
+
+    .main {
+      display: flex;
+      flex: 1;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      padding: 20px;
+      gap: 10px;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .divider {
+      width: 1px;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    .panel-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      flex-shrink: 0;
+    }
+
+    textarea {
+      flex: 1;
+      resize: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--code-bg);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.6;
+      padding: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+      min-height: 0;
+    }
+    textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 18px;
+      transition: background 0.15s, opacity 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+    }
+    .btn-ghost:hover { background: var(--bg); }
+
+    .error {
+      background: var(--error-bg);
+      border: 1px solid var(--error-border);
+      color: var(--error-text);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    .output-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    pre#output {
+      flex: 1;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--code-bg);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.6;
+      padding: 14px;
+      margin: 0;
+      white-space: pre;
+      min-height: 0;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+    }
+
+    .placeholder {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px dashed var(--border);
+      border-radius: var(--radius);
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    .spinner {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--code-bg);
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin-icon {
+      width: 28px; height: 28px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    /* Syntax highlighting */
+    .tok-key     { color: #7c3aed; }
+    .tok-str     { color: #059669; }
+    .tok-num     { color: #d97706; }
+    .tok-bool    { color: #d97706; }
+    .tok-null    { color: #6b7280; }
+    .tok-license-key { color: var(--license-color); font-weight: 700; }
+    .tok-license-val { color: var(--license-color); font-weight: 700; }
+
+    .stats {
+      font-size: 12px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>License Generator</h1>
+    <p>Введите список библиотек — получите лицензии из npm registry или Go module proxy. Используйте <code style="background:var(--bg);padding:1px 5px;border-radius:4px">"type": "golang"</code> для Go-модулей.</p>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- LEFT -->
+  <div class="panel">
+    <span class="panel-label">Входной JSON</span>
+    <textarea id="input" spellcheck="false" placeholder='[
+  { "name": "react", "version": "18.3.1" },
+  { "type": "golang", "name": "github.com/spf13/cobra", "version": "v1.10.2" }
+]'>[
+  { "name": "react", "version": "18.3.1" },
+  { "name": "typescript", "version": "5.8.3" },
+  { "name": "vite", "version": "6.3.5" },
+  { "name": "@eslint/js", "version": "9.27.0" },
+  { "type": "golang", "name": "github.com/spf13/cobra", "version": "v1.10.2" },
+  { "type": "golang", "name": "github.com/spf13/pflag", "version": "v1.0.9" }
+]</textarea>
+    <div class="actions">
+      <button class="btn-primary" id="resolveBtn" onclick="resolve()">Получить лицензии</button>
+      <button class="btn-ghost" onclick="clearInput()">Очистить</button>
+      <span class="stats" id="stats"></span>
+    </div>
+    <div class="error" id="error" style="display:none"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- RIGHT -->
+  <div class="panel">
+    <span class="panel-label">Выходной JSON <span id="outputLabel" style="font-weight:400;text-transform:none;letter-spacing:0">(с полем license)</span></span>
+    <div class="output-wrap" id="outputWrap">
+      <div class="placeholder" id="placeholder">Нажмите «Получить лицензии»,<br>чтобы увидеть результат</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  let abortCtrl = null;
+
+  function showError(msg) {
+    const el = document.getElementById('error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  function hideError() {
+    document.getElementById('error').style.display = 'none';
+  }
+
+  function clearInput() {
+    document.getElementById('input').value = '';
+    document.getElementById('stats').textContent = '';
+    hideError();
+    resetOutput();
+  }
+
+  function resetOutput() {
+    const wrap = document.getElementById('outputWrap');
+    wrap.innerHTML = '<div class="placeholder" id="placeholder">Нажмите «Получить лицензии»,<br>чтобы увидеть результат</div>';
+  }
+
+  function showSpinner() {
+    const wrap = document.getElementById('outputWrap');
+    wrap.innerHTML = '<div class="spinner"><div class="spin-icon"></div><span>Запрашиваем npm registry…</span></div>';
+  }
+
+  function showOutput(json) {
+    const wrap = document.getElementById('outputWrap');
+    wrap.innerHTML = `
+      <div class="output-wrap" style="flex:1;position:relative;display:flex;flex-direction:column;min-height:0">
+        <pre id="output"></pre>
+        <button class="btn-ghost copy-btn" onclick="copyOutput()">Копировать</button>
+      </div>`;
+    document.getElementById('output').innerHTML = highlight(json);
+  }
+
+  function copyOutput() {
+    const pre = document.getElementById('output');
+    if (!pre) return;
+    navigator.clipboard.writeText(pre.textContent).then(() => {
+      const btn = document.querySelector('.copy-btn');
+      if (btn) { btn.textContent = 'Скопировано!'; setTimeout(() => btn.textContent = 'Копировать', 1500); }
+    });
+  }
+
+  function highlight(jsonStr) {
+    const lines = jsonStr.split('\n');
+
+    return lines.map(line => {
+      const escaped = line
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      const keyMatch = escaped.match(/^(\s*)(")([^"]+)(")\s*:/);
+      if (keyMatch) {
+        const key = keyMatch[3];
+
+        if (key === 'licenses' || key === 'license') {
+          return escaped
+            .replace(/^(\s*)(")(licenses?|license)(")\s*:/, (m, sp, q1, k, q2) =>
+              `${sp}<span class="tok-license-key">${q1}${k}${q2}</span>:`)
+            .replace(/:\s*(")(.*?)(")/, (m, q1, v, q2) =>
+              `: <span class="tok-license-val">${q1}${v}${q2}</span>`);
+        }
+
+        return escaped
+          .replace(/^(\s*)(")(.*?)(")\s*:/, (m, sp, q1, k, q2) =>
+            `${sp}<span class="tok-key">${q1}${k}${q2}</span>:`)
+          .replace(/:\s*(")(.*?)(")/, (m, q1, v, q2) =>
+            `: <span class="tok-str">${q1}${v}${q2}</span>`)
+          .replace(/:\s*(\d[\d.eE+\-]*)/, (m, n) =>
+            `: <span class="tok-num">${n}</span>`)
+          .replace(/:\s*(true|false)/, (m, b) =>
+            `: <span class="tok-bool">${b}</span>`)
+          .replace(/:\s*(null)/, () =>
+            `: <span class="tok-null">null</span>`);
+      }
+
+      return escaped
+        .replace(/^(\s*)(")(.*?)(")/, (m, sp, q1, v, q2) =>
+          `${sp}<span class="tok-str">${q1}${v}${q2}</span>`)
+        .replace(/^(\s*)(\d[\d.eE+\-]*)/, (m, sp, n) =>
+          `${sp}<span class="tok-num">${n}</span>`);
+    }).join('\n');
+  }
+
+  async function resolve() {
+    hideError();
+
+    const raw = document.getElementById('input').value.trim();
+    if (!raw) { showError('Введите JSON'); return; }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) throw new Error('Ожидается массив JSON');
+    } catch (e) {
+      showError('Неверный JSON: ' + e.message);
+      return;
+    }
+
+    const btn = document.getElementById('resolveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Загрузка…';
+    document.getElementById('stats').textContent = '';
+
+    if (abortCtrl) abortCtrl.abort();
+    abortCtrl = new AbortController();
+
+    showSpinner();
+
+    const t0 = performance.now();
+    try {
+      const res = await fetch('/api/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsed),
+        signal: abortCtrl.signal,
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || res.statusText);
+      }
+
+      const data = await res.json();
+      const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+      const jsonStr = JSON.stringify(data, null, 2);
+
+      showOutput(jsonStr);
+
+      const unknown = data.filter(d => d.license === 'UNKNOWN').length;
+      document.getElementById('stats').textContent =
+        `${data.length} пакет(ов), ${elapsed}s` + (unknown ? `, ${unknown} UNKNOWN` : '');
+
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      resetOutput();
+      showError('Ошибка: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Получить лицензии';
+    }
+  }
+
+  // Ctrl+Enter / Cmd+Enter to resolve
+  document.getElementById('input').addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') resolve();
+  });
+</script>
+
+</body>
+</html>

@@ -21,6 +21,11 @@ import (
 var uiHTML []byte
 
 var uiPort int
+var uiLicensesPath string
+
+// localLicenseCache maps "name@version" and "name" → license string.
+// Populated at startup from the licenses.json file.
+var localLicenseCache map[string]string
 
 var uiCmd = &cobra.Command{
 	Use:   "ui",
@@ -32,9 +37,17 @@ var uiCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(uiCmd)
 	uiCmd.Flags().IntVarP(&uiPort, "port", "P", 8080, "port to listen on")
+	uiCmd.Flags().StringVarP(&uiLicensesPath, "licenses", "l", "./licenses.json", "path to existing licenses.json for offline lookup")
 }
 
 func runUI(_ *cobra.Command, _ []string) error {
+	localLicenseCache = loadLocalCache(uiLicensesPath)
+	if len(localLicenseCache) > 0 {
+		fmt.Printf("Loaded %d entries from %s\n", len(localLicenseCache)/2, uiLicensesPath)
+	} else {
+		fmt.Printf("No local cache found at %s — only network mode will work\n", uiLicensesPath)
+	}
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +62,72 @@ func runUI(_ *cobra.Command, _ []string) error {
 	return http.ListenAndServe(addr, mux)
 }
 
+// loadLocalCache reads a licenses.json file and builds a lookup map.
+// Keys are "name@version" and "name" (version-less fallback).
+func loadLocalCache(path string) map[string]string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return map[string]string{}
+	}
+
+	var entries []struct {
+		Name     string            `json:"name"`
+		Version  string            `json:"version"`
+		Licenses []json.RawMessage `json:"licenses"`
+	}
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return map[string]string{}
+	}
+
+	cache := make(map[string]string, len(entries)*2)
+	for _, e := range entries {
+		lic := extractCacheLicense(e.Licenses)
+		if e.Version != "" {
+			cache[e.Name+"@"+e.Version] = lic
+		}
+		cache[e.Name] = lic
+	}
+	return cache
+}
+
+// extractCacheLicense handles both CLI format {"license":{"name":"MIT"}}
+// and UI format {"license":"MIT"}.
+func extractCacheLicense(licenses []json.RawMessage) string {
+	if len(licenses) == 0 {
+		return "UNKNOWN"
+	}
+	var obj struct {
+		License json.RawMessage `json:"license"`
+	}
+	if err := json.Unmarshal(licenses[0], &obj); err != nil {
+		return "UNKNOWN"
+	}
+	// Try string: "MIT"
+	var s string
+	if err := json.Unmarshal(obj.License, &s); err == nil {
+		return s
+	}
+	// Try object: {"name": "MIT"}
+	var named struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(obj.License, &named); err == nil && named.Name != "" {
+		return named.Name
+	}
+	return "UNKNOWN"
+}
+
+// detectPkgType returns "golang" for module paths like github.com/foo/bar,
+// and "npm" for everything else.
+func detectPkgType(name string) string {
+	if idx := strings.Index(name, "/"); idx > 0 {
+		if strings.Contains(name[:idx], ".") {
+			return "golang"
+		}
+	}
+	return "npm"
+}
+
 var npmClient = &http.Client{Timeout: 15 * time.Second}
 
 func handleResolve(w http.ResponseWriter, r *http.Request) {
@@ -56,6 +135,8 @@ func handleResolve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	useNetwork := r.URL.Query().Get("network") == "1"
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
@@ -78,14 +159,28 @@ func handleResolve(w http.ResponseWriter, r *http.Request) {
 
 		name, _ := item["name"].(string)
 		version, _ := item["version"].(string)
-		pkgType, _ := item["type"].(string)
 
 		license := "UNKNOWN"
 		if name != "" {
-			if pkgType == "golang" {
-				license = lookupGoLicense(name, version)
-			} else {
-				license = lookupNpmLicense(name, version)
+			// 1. Local cache: exact name@version match
+			if version != "" {
+				if lic, ok := localLicenseCache[name+"@"+version]; ok {
+					license = lic
+				}
+			}
+			// 2. Local cache: name-only fallback
+			if license == "UNKNOWN" {
+				if lic, ok := localLicenseCache[name]; ok {
+					license = lic
+				}
+			}
+			// 3. Network (only if toggle is on)
+			if license == "UNKNOWN" && useNetwork {
+				if detectPkgType(name) == "golang" {
+					license = lookupGoLicense(name, version)
+				} else {
+					license = lookupNpmLicense(name, version)
+				}
 			}
 		}
 		entry["licenses"] = []map[string]any{{"license": license}}

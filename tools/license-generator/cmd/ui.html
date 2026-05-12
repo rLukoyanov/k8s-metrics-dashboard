@@ -224,7 +224,7 @@
 <header>
   <div>
     <h1>License Generator</h1>
-    <p>Введите список библиотек — получите лицензии из npm registry или Go module proxy. Используйте <code style="background:var(--bg);padding:1px 5px;border-radius:4px">"type": "golang"</code> для Go-модулей.</p>
+    <p>Введите список npm или Go-пакетов — тип определяется автоматически. Без тоггла используется только локальный кэш.</p>
   </div>
 </header>
 
@@ -235,18 +235,22 @@
     <span class="panel-label">Входной JSON</span>
     <textarea id="input" spellcheck="false" placeholder='[
   { "name": "react", "version": "18.3.1" },
-  { "type": "golang", "name": "github.com/spf13/cobra", "version": "v1.10.2" }
+  { "name": "github.com/spf13/cobra", "version": "v1.10.2" }
 ]'>[
   { "name": "react", "version": "18.3.1" },
   { "name": "typescript", "version": "5.8.3" },
   { "name": "vite", "version": "6.3.5" },
   { "name": "@eslint/js", "version": "9.27.0" },
-  { "type": "golang", "name": "github.com/spf13/cobra", "version": "v1.10.2" },
-  { "type": "golang", "name": "github.com/spf13/pflag", "version": "v1.0.9" }
+  { "name": "github.com/spf13/cobra", "version": "v1.10.2" },
+  { "name": "github.com/spf13/pflag", "version": "v1.0.9" }
 ]</textarea>
     <div class="actions">
       <button class="btn-primary" id="resolveBtn" onclick="resolve()">Получить лицензии</button>
       <button class="btn-ghost" onclick="clearInput()">Очистить</button>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none">
+        <input type="checkbox" id="networkToggle" style="accent-color:var(--accent);width:15px;height:15px">
+        Интернет
+      </label>
       <span class="stats" id="stats"></span>
     </div>
     <div class="error" id="error" style="display:none"></div>
@@ -289,8 +293,10 @@
   }
 
   function showSpinner() {
+    const network = document.getElementById('networkToggle').checked;
+    const label = network ? 'Запрашиваем registry…' : 'Ищем в локальном кэше…';
     const wrap = document.getElementById('outputWrap');
-    wrap.innerHTML = '<div class="spinner"><div class="spin-icon"></div><span>Запрашиваем npm registry…</span></div>';
+    wrap.innerHTML = `<div class="spinner"><div class="spin-icon"></div><span>${label}</span></div>`;
   }
 
   function showOutput(json) {
@@ -380,8 +386,9 @@
     showSpinner();
 
     const t0 = performance.now();
+    const useNetwork = document.getElementById('networkToggle').checked;
     try {
-      const res = await fetch('/api/resolve', {
+      const res = await fetch('/api/resolve' + (useNetwork ? '?network=1' : ''), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(parsed),
@@ -399,9 +406,9 @@
 
       showOutput(jsonStr);
 
-      const unknown = data.filter(d => d.license === 'UNKNOWN').length;
+      const unknown = data.filter(d => d.licenses?.[0]?.license === 'UNKNOWN').length;
       document.getElementById('stats').textContent =
-        `${data.length} пакет(ов), ${elapsed}s` + (unknown ? `, ${unknown} UNKNOWN` : '');
+        `${data.length} пакет(ов), ${elapsed}s` + (unknown ? `, ${unknown} UNKNOWN` : '') + (useNetwork ? '' : ' [кэш]');
 
     } catch (e) {
       if (e.name === 'AbortError') return;

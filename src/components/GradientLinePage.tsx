@@ -17,13 +17,34 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 
+const verticalHoverLine = {
+  id: 'verticalHoverLine',
+  afterDraw(chart: ChartJS<'line'>) {
+    const active = chart.getActiveElements();
+    if (!active.length) return;
+
+    const { ctx, chartArea } = chart;
+    const x = active[0].element.x;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.moveTo(x, chartArea.top);
+    ctx.lineTo(x, chartArea.bottom);
+    ctx.stroke();
+    ctx.restore();
+  },
+};
+
 declare module 'chart.js' {
   interface TooltipPositionerMap {
     fixedY: TooltipPositionerFunction<ChartType>;
   }
 }
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler, verticalHoverLine);
 
 if (!Tooltip.positioners.fixedY) {
   Tooltip.positioners.fixedY = function fixedY(elements, eventPosition) {

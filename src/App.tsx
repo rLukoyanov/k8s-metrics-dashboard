@@ -4,9 +4,10 @@ import DeploymentsPage from './components/DeploymentsPage';
 import GradientLinePage from './components/GradientLinePage';
 import ReactFlowPage from './components/ReactFlowPage';
 import ResultPage from './result/App';
+import LicenseGeneratorPage from './components/LicenseGeneratorPage';
 
 function App() {
-  const [activePage, setActivePage] = useState<'dashboard' | 'deployments' | 'result' | 'gradient-line' | 'reactflow'>('dashboard');
+  const [activePage, setActivePage] = useState<'dashboard' | 'deployments' | 'result' | 'gradient-line' | 'reactflow' | 'licenses'>('dashboard');
 
   return (
     <div className="w-screen pt-16">
@@ -67,6 +68,17 @@ function App() {
           >
             React Flow
           </button>
+          <button
+            type="button"
+            onClick={() => setActivePage('licenses')}
+            className={`rounded-md px-4 py-2 text-sm font-medium ${
+              activePage === 'licenses'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Licenses
+          </button>
         </nav>
       </header>
 
@@ -75,6 +87,7 @@ function App() {
       {activePage === 'result' && <ResultPage />}
       {activePage === 'gradient-line' && <GradientLinePage />}
       {activePage === 'reactflow' && <ReactFlowPage />}
+      {activePage === 'licenses' && <LicenseGeneratorPage />}
     </div>
   );
 }

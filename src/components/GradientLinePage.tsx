@@ -281,7 +281,9 @@ const GradientLinePage = () => {
             const ts = timestampsRef.current;
             if (!ts.length) return;
             const dataInterval = (ts[ts.length - 1] - ts[0]) / (ts.length - 1);
-            const step = Math.max(1, Math.round((30 * 60) / dataInterval));
+            const timeRange = ts[ts.length - 1] - ts[0];
+            const targetMinutes = timeRange < 7200 ? 15 : 30;
+            const step = Math.max(1, Math.round((targetMinutes * 60) / dataInterval));
             scale.ticks = scale.ticks.filter((_, i) => i % step === 0);
           },
           ticks: {

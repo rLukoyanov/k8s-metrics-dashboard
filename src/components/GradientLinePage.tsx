@@ -188,7 +188,7 @@ const GradientLinePage = () => {
         );
         const sorted = Array.from(allTimestamps).sort((a, b) => a - b);
         const labels = sorted.map((ts) =>
-          new Date(ts * 1000).toLocaleTimeString(),
+          new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         );
         const staticColors = ["#3b82f6", "#ef4444", "#22c55e", "#eab308"];
         const datasets = series.map((s, si) => {

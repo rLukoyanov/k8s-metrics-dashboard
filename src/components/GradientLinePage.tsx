@@ -190,16 +190,18 @@ const GradientLinePage = () => {
         const labels = sorted.map((ts) =>
           new Date(ts * 1000).toLocaleTimeString(),
         );
-        const datasets = series.map((s) => {
+        const staticColors = ["#3b82f6", "#ef4444", "#22c55e", "#eab308"];
+        const datasets = series.map((s, si) => {
           const valueMap = new Map(
             s.values.map(([ts, val]) => [ts, parseFloat(val)]),
           );
           const data = sorted.map((ts) => valueMap.get(ts) ?? 0);
+          const isStatic = chartIdx === 0;
           return {
             label: s.metric.container,
             data,
-            borderColor: createLineGradient,
-            backgroundColor: createGradient,
+            borderColor: isStatic ? staticColors[si] : createLineGradient,
+            backgroundColor: isStatic ? staticColors[si] + "1a" : createGradient,
             borderWidth: 4,
             tension: 0.38,
             pointRadius: 0,
@@ -305,11 +307,30 @@ const GradientLinePage = () => {
           afterBuildTicks(scale) {
             const ts = timestampsRef.current;
             if (!ts.length) return;
-            const dataInterval = (ts[ts.length - 1] - ts[0]) / (ts.length - 1);
+
             const timeRange = ts[ts.length - 1] - ts[0];
-            const targetMinutes = timeRange < 7200 ? 15 : 30;
-            const step = Math.max(1, Math.round((targetMinutes * 60) / dataInterval));
-            scale.ticks = scale.ticks.filter((_, i) => i % step === 0);
+            const intervalMin = timeRange < 7200 ? 15 : 30;
+            const intervalSec = intervalMin * 60;
+
+            const firstBoundary = Math.ceil(ts[0] / intervalSec) * intervalSec;
+            const roundTimes: number[] = [];
+            for (let t = firstBoundary; t < ts[ts.length - 1]; t += intervalSec) {
+              roundTimes.push(t);
+            }
+
+            const indices = new Set(
+              roundTimes.map((rt) => {
+                let best = 0;
+                let bestDiff = Infinity;
+                ts.forEach((t, i) => {
+                  const d = Math.abs(t - rt);
+                  if (d < bestDiff) { bestDiff = d; best = i; }
+                });
+                return best;
+              }),
+            );
+
+            scale.ticks = scale.ticks.filter((_, i) => indices.has(i));
           },
           ticks: {
             color: "rgba(51, 65, 85, 0.72)",

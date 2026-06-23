@@ -22,6 +22,32 @@ import {
   promConfigs,
 } from "../data/mockPrometheusData";
 
+const xAxisGrid = {
+  id: 'xAxisGrid',
+  afterDraw(chart: ChartJS<'line'>) {
+    const xScale = chart.scales.x;
+    if (!xScale) return;
+
+    const { ctx, chartArea } = chart;
+    ctx.save();
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
+    ctx.lineWidth = 1;
+
+    xScale.ticks.forEach((tick) => {
+      const x = xScale.getPixelForValue(tick.value);
+      if (x < chartArea.left || x > chartArea.right) return;
+
+      ctx.beginPath();
+      ctx.moveTo(x, chartArea.top);
+      ctx.lineTo(x, chartArea.bottom);
+      ctx.stroke();
+    });
+
+    ctx.restore();
+  },
+};
+
 const verticalHoverLine = {
   id: "verticalHoverLine",
   afterDraw(chart: ChartJS<"line">) {
@@ -57,6 +83,7 @@ ChartJS.register(
   Tooltip,
   Legend,
   Filler,
+  xAxisGrid,
   verticalHoverLine,
 );
 
@@ -273,9 +300,7 @@ const GradientLinePage = () => {
       scales: {
         x: {
           grid: {
-            color: "rgba(148, 163, 184, 0.18)",
-            borderDash: [4, 5],
-            drawTicks: false,
+            display: false,
           },
           afterBuildTicks(scale) {
             const ts = timestampsRef.current;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -14,12 +14,17 @@ import {
   type ScriptableContext,
   type TooltipItem,
   type TooltipPositionerFunction,
-} from 'chart.js';
-import { Line } from 'react-chartjs-2';
+} from "chart.js";
+import { Line } from "react-chartjs-2";
+import {
+  generatePromSeries,
+  generateTimestamps,
+  promConfigs,
+} from "../data/mockPrometheusData";
 
 const verticalHoverLine = {
-  id: 'verticalHoverLine',
-  afterDraw(chart: ChartJS<'line'>) {
+  id: "verticalHoverLine",
+  afterDraw(chart: ChartJS<"line">) {
     const active = chart.getActiveElements();
     if (!active.length) return;
 
@@ -29,7 +34,7 @@ const verticalHoverLine = {
     ctx.save();
     ctx.beginPath();
     ctx.setLineDash([5, 4]);
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.45)";
     ctx.lineWidth = 1.5;
     ctx.moveTo(x, chartArea.top);
     ctx.lineTo(x, chartArea.bottom);
@@ -38,117 +43,48 @@ const verticalHoverLine = {
   },
 };
 
-declare module 'chart.js' {
+declare module "chart.js" {
   interface TooltipPositionerMap {
     fixedY: TooltipPositionerFunction<ChartType>;
   }
 }
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler, verticalHoverLine);
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend,
+  Filler,
+  verticalHoverLine,
+);
 
 if (!Tooltip.positioners.fixedY) {
   Tooltip.positioners.fixedY = function fixedY(elements, eventPosition) {
     const activeElement = elements[0];
     const fallbackX = eventPosition.x;
-    const x = activeElement ? activeElement.element.tooltipPosition(false).x : fallbackX;
+    const x = activeElement
+      ? activeElement.element.tooltipPosition(false).x
+      : fallbackX;
     const y = this.chart.chartArea.top + 20;
 
     return { x, y };
   };
 }
 
-interface PromSeries {
-  metric: {
-    __name__: string;
-    container: string;
-    pod: string;
-    namespace: string;
-    deployment: string;
-    instance: string;
-    job: string;
-  };
-  values: Array<[number, string]>;
-}
-
-const generateTimestamps = (count: number): number[] => {
-  const now = Math.floor(Date.now() / 1000);
-  const step = 30;
-  return Array.from({ length: count }, (_, i) => now - (count - 1 - i) * step);
-};
-
-const generatePromSeries = (
-  metricName: string,
-  container: string,
-  timestamps: number[],
-  base: number,
-  amp: number,
-  noise: number,
-  phase: number,
-): PromSeries => {
-  const podId = Math.random().toString(36).substring(2, 6);
-  return {
-    metric: {
-      __name__: metricName,
-      container,
-      pod: `pod-${podId}`,
-      namespace: 'default',
-      deployment: 'my-app',
-      instance: '10.0.0.1:8080',
-      job: 'kubernetes',
-    },
-    values: timestamps.map((ts, i) => {
-      const trend = Math.sin((i / timestamps.length) * Math.PI * 0.8);
-      const cycle = Math.sin(i * 0.1 + phase);
-      const value = base + amp * trend * 0.5 + amp * cycle * 0.3 + (Math.random() - 0.5) * noise;
-      return [ts, Math.max(0, value).toFixed(4)] as [number, string];
-    }),
-  };
-};
-
-const promConfigs = [
-  {
-    id: 'cpu',
-    metricName: 'container_cpu_usage_seconds_total',
-    title: 'CPU Usage',
-    subtitle: 'container_cpu_usage_seconds_total',
-    unit: 'cores',
-    containers: ['app', 'sidecar'],
-    bases: [0.35, 0.12],
-    amps: [0.25, 0.08],
-    noises: [0.08, 0.04],
-  },
-  {
-    id: 'memory',
-    metricName: 'container_memory_working_set_bytes',
-    title: 'Memory Usage',
-    subtitle: 'container_memory_working_set_bytes',
-    unit: 'bytes',
-    containers: ['app', 'sidecar'],
-    bases: [256_000_000, 128_000_000],
-    amps: [128_000_000, 64_000_000],
-    noises: [16_000_000, 8_000_000],
-  },
-  {
-    id: 'network',
-    metricName: 'container_network_receive_bytes_total',
-    title: 'Network Receive',
-    subtitle: 'container_network_receive_bytes_total',
-    unit: 'bytes/s',
-    containers: ['app', 'sidecar', 'proxy'],
-    bases: [1500, 800, 300],
-    amps: [500, 400, 150],
-    noises: [100, 80, 30],
-  },
-] as const;
-
 const formatChange = (change: number | null) => {
-  if (change === null) return 'Стартовая точка';
-  if (change === 0) return 'Без изменений';
-  const formatted = change >= 1_000_000_000 ? `${(change / 1_000_000_000).toFixed(2)}G` :
-                    change >= 1_000_000 ? `${(change / 1_000_000).toFixed(2)}M` :
-                    change >= 1_000 ? `${(change / 1_000).toFixed(2)}K` :
-                    change.toFixed(4);
-  return `${change > 0 ? '+' : ''}${formatted}`;
+  if (change === null) return "Стартовая точка";
+  if (change === 0) return "Без изменений";
+  const formatted =
+    change >= 1_000_000_000
+      ? `${(change / 1_000_000_000).toFixed(2)}G`
+      : change >= 1_000_000
+        ? `${(change / 1_000_000).toFixed(2)}M`
+        : change >= 1_000
+          ? `${(change / 1_000).toFixed(2)}K`
+          : change.toFixed(4);
+  return `${change > 0 ? "+" : ""}${formatted}`;
 };
 
 const getChange = (values: readonly number[], index: number) => {
@@ -156,56 +92,82 @@ const getChange = (values: readonly number[], index: number) => {
   return previousValue === null ? null : values[index] - previousValue;
 };
 
-const createGradient = (context: ScriptableContext<'line'>) => {
+const createGradient = (context: ScriptableContext<"line">) => {
   const { chart } = context;
   const { ctx, chartArea } = chart;
 
   if (!chartArea) {
-    return 'rgba(34, 197, 94, 0.22)';
+    return "rgba(34, 197, 94, 0.22)";
   }
 
-  const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-  gradient.addColorStop(0, 'rgba(239, 68, 68, 0.42)');
-  gradient.addColorStop(0.55, 'rgba(248, 113, 113, 0.18)');
-  gradient.addColorStop(1, 'rgba(34, 197, 94, 0.08)');
+  const gradient = ctx.createLinearGradient(
+    0,
+    chartArea.top,
+    0,
+    chartArea.bottom,
+  );
+  gradient.addColorStop(0, "rgba(239, 68, 68, 0.42)");
+  gradient.addColorStop(0.55, "rgba(248, 113, 113, 0.18)");
+  gradient.addColorStop(1, "rgba(34, 197, 94, 0.08)");
 
   return gradient;
 };
 
-const createLineGradient = (context: ScriptableContext<'line'>) => {
+const createLineGradient = (context: ScriptableContext<"line">) => {
   const { chart } = context;
   const { ctx, chartArea } = chart;
 
   if (!chartArea) {
-    return '#22c55e';
+    return "#22c55e";
   }
 
-  const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-  gradient.addColorStop(0, '#ef4444');
-  gradient.addColorStop(0.55, '#f97316');
-  gradient.addColorStop(1, '#22c55e');
+  const gradient = ctx.createLinearGradient(
+    0,
+    chartArea.top,
+    0,
+    chartArea.bottom,
+  );
+  gradient.addColorStop(0, "#ef4444");
+  gradient.addColorStop(0.55, "#f97316");
+  gradient.addColorStop(1, "#22c55e");
 
   return gradient;
 };
 
 const GradientLinePage = () => {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const chartRefs = useRef<Array<ChartJS<'line'> | null | undefined>>([]);
+  const chartRefs = useRef<Array<ChartJS<"line"> | null | undefined>>([]);
+  const timestampsRef = useRef<number[]>([]);
 
-  const chartData = useMemo<Array<ChartData<'line'>>>(
+  const chartData = useMemo<Array<ChartData<"line">>>(
     () =>
       promConfigs.map((cfg, chartIdx) => {
         const timestamps = generateTimestamps(120);
+        if (chartIdx === 0) timestampsRef.current = timestamps;
         const series = cfg.containers.map((container, ci) =>
-          generatePromSeries(cfg.metricName, container, timestamps, cfg.bases[ci], cfg.amps[ci], cfg.noises[ci], ci * 2.5),
+          generatePromSeries(
+            cfg.metricName,
+            container,
+            timestamps,
+            cfg.bases[ci],
+            cfg.amps[ci],
+            cfg.noises[ci],
+            ci * 2.5,
+          ),
         );
         const allTimestamps = new Set<number>();
-        series.forEach(s => s.values.forEach(([ts]) => allTimestamps.add(ts)));
+        series.forEach((s) =>
+          s.values.forEach(([ts]) => allTimestamps.add(ts)),
+        );
         const sorted = Array.from(allTimestamps).sort((a, b) => a - b);
-        const labels = sorted.map(ts => new Date(ts * 1000).toLocaleTimeString());
+        const labels = sorted.map((ts) =>
+          new Date(ts * 1000).toLocaleTimeString(),
+        );
         const datasets = series.map((s) => {
-          const valueMap = new Map(s.values.map(([ts, val]) => [ts, parseFloat(val)]));
-          const data = sorted.map(ts => valueMap.get(ts) ?? 0);
+          const valueMap = new Map(
+            s.values.map(([ts, val]) => [ts, parseFloat(val)]),
+          );
+          const data = sorted.map((ts) => valueMap.get(ts) ?? 0);
           return {
             label: s.metric.container,
             data,
@@ -233,7 +195,7 @@ const GradientLinePage = () => {
       if (hoveredIndex === null) {
         chart.setActiveElements([]);
         chart.tooltip?.setActiveElements([], { x: 0, y: 0 });
-        chart.update('none');
+        chart.update("none");
         return;
       }
 
@@ -244,12 +206,15 @@ const GradientLinePage = () => {
 
       const position = point.tooltipPosition(false);
       chart.setActiveElements([{ datasetIndex: 0, index: hoveredIndex }]);
-      chart.tooltip?.setActiveElements([{ datasetIndex: 0, index: hoveredIndex }], position);
-      chart.update('none');
+      chart.tooltip?.setActiveElements(
+        [{ datasetIndex: 0, index: hoveredIndex }],
+        position,
+      );
+      chart.update("none");
     });
   }, [hoveredIndex]);
 
-  const options = useMemo<ChartOptions<'line'>>(
+  const options = useMemo<ChartOptions<"line">>(
     () => ({
       responsive: true,
       maintainAspectRatio: false,
@@ -262,7 +227,7 @@ const GradientLinePage = () => {
         setHoveredIndex(activeElements[0].index);
       },
       interaction: {
-        mode: 'index',
+        mode: "index",
         intersect: false,
       },
       plugins: {
@@ -271,29 +236,36 @@ const GradientLinePage = () => {
         },
         tooltip: {
           enabled: true,
-          position: 'fixedY',
+          position: "fixedY",
           displayColors: false,
-          backgroundColor: 'rgba(15, 23, 42, 0.92)',
-          titleColor: '#f8fafc',
-          bodyColor: '#e2e8f0',
-          borderColor: 'rgba(148, 163, 184, 0.25)',
+          backgroundColor: "rgba(15, 23, 42, 0.92)",
+          titleColor: "#f8fafc",
+          bodyColor: "#e2e8f0",
+          borderColor: "rgba(148, 163, 184, 0.25)",
           borderWidth: 1,
           padding: 12,
           caretPadding: 10,
           cornerRadius: 12,
           callbacks: {
             title(items) {
-              return items[0]?.label ?? '';
+              return items[0]?.label ?? "";
             },
-            label(context: TooltipItem<'line'>) {
+            label(context: TooltipItem<"line">) {
               const val = Number(context.parsed.y);
               const raw = context.dataset.data as number[];
               const change = getChange(raw, context.dataIndex);
-              const formatted = val >= 1_000_000_000 ? `${(val / 1_000_000_000).toFixed(2)}G` :
-                               val >= 1_000_000 ? `${(val / 1_000_000).toFixed(2)}M` :
-                               val >= 1_000 ? `${(val / 1_000).toFixed(2)}K` :
-                               val.toFixed(4);
-              return [`${context.dataset.label}: ${formatted}`, formatChange(change)];
+              const formatted =
+                val >= 1_000_000_000
+                  ? `${(val / 1_000_000_000).toFixed(2)}G`
+                  : val >= 1_000_000
+                    ? `${(val / 1_000_000).toFixed(2)}M`
+                    : val >= 1_000
+                      ? `${(val / 1_000).toFixed(2)}K`
+                      : val.toFixed(4);
+              return [
+                `${context.dataset.label}: ${formatted}`,
+                formatChange(change),
+              ];
             },
           },
         },
@@ -301,12 +273,19 @@ const GradientLinePage = () => {
       scales: {
         x: {
           grid: {
-            color: 'rgba(148, 163, 184, 0.18)',
+            color: "rgba(148, 163, 184, 0.18)",
+            borderDash: [4, 5],
             drawTicks: false,
           },
+          afterBuildTicks(scale) {
+            const ts = timestampsRef.current;
+            if (!ts.length) return;
+            const dataInterval = (ts[ts.length - 1] - ts[0]) / (ts.length - 1);
+            const step = Math.max(1, Math.round((30 * 60) / dataInterval));
+            scale.ticks = scale.ticks.filter((_, i) => i % step === 0);
+          },
           ticks: {
-            color: 'rgba(51, 65, 85, 0.72)',
-            maxTicksLimit: 5,
+            color: "rgba(51, 65, 85, 0.72)",
           },
           border: {
             display: false,
@@ -315,17 +294,18 @@ const GradientLinePage = () => {
         y: {
           beginAtZero: true,
           ticks: {
-            color: 'rgba(51, 65, 85, 0.72)',
+            color: "rgba(51, 65, 85, 0.72)",
             callback: (tickValue) => {
               const v = Number(tickValue);
-              if (v >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(1)}G`;
+              if (v >= 1_000_000_000)
+                return `${(v / 1_000_000_000).toFixed(1)}G`;
               if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
               if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
               return v.toFixed(2);
             },
           },
           grid: {
-            color: 'rgba(148, 163, 184, 0.18)',
+            color: "rgba(148, 163, 184, 0.18)",
             drawTicks: false,
           },
           border: {
@@ -345,21 +325,23 @@ const GradientLinePage = () => {
             <section
               key={series.id}
               className={`relative overflow-hidden rounded-4xl border border-white/10 bg-white/10 p-6 shadow-2xl shadow-blue-950/20 backdrop-blur-xl ${
-                index === 0 ? 'lg:col-span-2' : ''
+                index === 0 ? "lg:col-span-2" : ""
               }`}
             >
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.2),transparent_52%)]" />
 
               <div className="relative z-10">
                 <div className="mb-4">
-                  <h2 className="text-xl font-semibold text-white">{series.title}</h2>
+                  <h2 className="text-xl font-semibold text-white">
+                    {series.title}
+                  </h2>
                   <p className="text-sm text-slate-300">{series.subtitle}</p>
                 </div>
 
                 <div className="rounded-[28px] border border-white/10 bg-slate-900/55 p-4">
                   <div
                     className={`rounded-3xl bg-linear-to-b from-white/10 via-white/5 to-transparent p-4 ${
-                      index === 0 ? 'h-120' : 'h-96'
+                      index === 0 ? "h-120" : "h-96"
                     }`}
                   >
                     <Line

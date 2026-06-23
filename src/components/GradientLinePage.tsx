@@ -57,39 +57,98 @@ if (!Tooltip.positioners.fixedY) {
   };
 }
 
-const labels = ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'];
+interface PromSeries {
+  metric: {
+    __name__: string;
+    container: string;
+    pod: string;
+    namespace: string;
+    deployment: string;
+    instance: string;
+    job: string;
+  };
+  values: Array<[number, string]>;
+}
 
-const chartSeries = [
+const generateTimestamps = (count: number): number[] => {
+  const now = Math.floor(Date.now() / 1000);
+  const step = 30;
+  return Array.from({ length: count }, (_, i) => now - (count - 1 - i) * step);
+};
+
+const generatePromSeries = (
+  metricName: string,
+  container: string,
+  timestamps: number[],
+  base: number,
+  amp: number,
+  noise: number,
+  phase: number,
+): PromSeries => {
+  const podId = Math.random().toString(36).substring(2, 6);
+  return {
+    metric: {
+      __name__: metricName,
+      container,
+      pod: `pod-${podId}`,
+      namespace: 'default',
+      deployment: 'my-app',
+      instance: '10.0.0.1:8080',
+      job: 'kubernetes',
+    },
+    values: timestamps.map((ts, i) => {
+      const trend = Math.sin((i / timestamps.length) * Math.PI * 0.8);
+      const cycle = Math.sin(i * 0.1 + phase);
+      const value = base + amp * trend * 0.5 + amp * cycle * 0.3 + (Math.random() - 0.5) * noise;
+      return [ts, Math.max(0, value).toFixed(4)] as [number, string];
+    }),
+  };
+};
+
+const promConfigs = [
   {
     id: 'cpu',
+    metricName: 'container_cpu_usage_seconds_total',
     title: 'CPU Usage',
-    subtitle: 'Процессорная нагрузка',
-    values: [24, 28, 22, 35, 49, 61, 55, 67, 63],
+    subtitle: 'container_cpu_usage_seconds_total',
+    unit: 'cores',
+    containers: ['app', 'sidecar'],
+    bases: [0.35, 0.12],
+    amps: [0.25, 0.08],
+    noises: [0.08, 0.04],
   },
   {
     id: 'memory',
+    metricName: 'container_memory_working_set_bytes',
     title: 'Memory Usage',
-    subtitle: 'Использование памяти',
-    values: [18, 21, 26, 32, 38, 44, 47, 52, 49],
+    subtitle: 'container_memory_working_set_bytes',
+    unit: 'bytes',
+    containers: ['app', 'sidecar'],
+    bases: [256_000_000, 128_000_000],
+    amps: [128_000_000, 64_000_000],
+    noises: [16_000_000, 8_000_000],
   },
   {
     id: 'network',
-    title: 'Network Load',
-    subtitle: 'Сетевая активность',
-    values: [12, 17, 19, 28, 34, 48, 41, 46, 39],
+    metricName: 'container_network_receive_bytes_total',
+    title: 'Network Receive',
+    subtitle: 'container_network_receive_bytes_total',
+    unit: 'bytes/s',
+    containers: ['app', 'sidecar', 'proxy'],
+    bases: [1500, 800, 300],
+    amps: [500, 400, 150],
+    noises: [100, 80, 30],
   },
 ] as const;
 
 const formatChange = (change: number | null) => {
-  if (change === null) {
-    return 'Стартовая точка';
-  }
-
-  if (change === 0) {
-    return 'Без изменений';
-  }
-
-  return `${change > 0 ? '+' : ''}${change}% к предыдущей точке`;
+  if (change === null) return 'Стартовая точка';
+  if (change === 0) return 'Без изменений';
+  const formatted = change >= 1_000_000_000 ? `${(change / 1_000_000_000).toFixed(2)}G` :
+                    change >= 1_000_000 ? `${(change / 1_000_000).toFixed(2)}M` :
+                    change >= 1_000 ? `${(change / 1_000).toFixed(2)}K` :
+                    change.toFixed(4);
+  return `${change > 0 ? '+' : ''}${formatted}`;
 };
 
 const getChange = (values: readonly number[], index: number) => {
@@ -135,23 +194,33 @@ const GradientLinePage = () => {
 
   const chartData = useMemo<Array<ChartData<'line'>>>(
     () =>
-      chartSeries.map((series) => ({
-        labels,
-        datasets: [
-          {
-            label: series.title,
-            data: [...series.values],
+      promConfigs.map((cfg, chartIdx) => {
+        const timestamps = generateTimestamps(120);
+        const series = cfg.containers.map((container, ci) =>
+          generatePromSeries(cfg.metricName, container, timestamps, cfg.bases[ci], cfg.amps[ci], cfg.noises[ci], ci * 2.5),
+        );
+        const allTimestamps = new Set<number>();
+        series.forEach(s => s.values.forEach(([ts]) => allTimestamps.add(ts)));
+        const sorted = Array.from(allTimestamps).sort((a, b) => a - b);
+        const labels = sorted.map(ts => new Date(ts * 1000).toLocaleTimeString());
+        const datasets = series.map((s) => {
+          const valueMap = new Map(s.values.map(([ts, val]) => [ts, parseFloat(val)]));
+          const data = sorted.map(ts => valueMap.get(ts) ?? 0);
+          return {
+            label: s.metric.container,
+            data,
             borderColor: createLineGradient,
             backgroundColor: createGradient,
-            fill: true,
             borderWidth: 4,
             tension: 0.38,
             pointRadius: 0,
             pointHoverRadius: 0,
             pointHitRadius: 18,
-          },
-        ],
-      })),
+            fill: chartIdx === 0 ? true : false,
+          };
+        });
+        return { labels, datasets };
+      }),
     [],
   );
 
@@ -213,13 +282,18 @@ const GradientLinePage = () => {
           caretPadding: 10,
           cornerRadius: 12,
           callbacks: {
-            title: (items) => items[0]?.label ?? '',
-            label: (context: TooltipItem<'line'>) => {
-              const currentValue = Number(context.parsed.y);
-              const datasetValues = context.dataset.data as number[];
-              const change = getChange(datasetValues, context.dataIndex);
-
-              return [`Загрузка: ${currentValue}%`, formatChange(change)];
+            title(items) {
+              return items[0]?.label ?? '';
+            },
+            label(context: TooltipItem<'line'>) {
+              const val = Number(context.parsed.y);
+              const raw = context.dataset.data as number[];
+              const change = getChange(raw, context.dataIndex);
+              const formatted = val >= 1_000_000_000 ? `${(val / 1_000_000_000).toFixed(2)}G` :
+                               val >= 1_000_000 ? `${(val / 1_000_000).toFixed(2)}M` :
+                               val >= 1_000 ? `${(val / 1_000).toFixed(2)}K` :
+                               val.toFixed(4);
+              return [`${context.dataset.label}: ${formatted}`, formatChange(change)];
             },
           },
         },
@@ -227,10 +301,12 @@ const GradientLinePage = () => {
       scales: {
         x: {
           grid: {
-            display: false,
+            color: 'rgba(148, 163, 184, 0.18)',
+            drawTicks: false,
           },
           ticks: {
             color: 'rgba(51, 65, 85, 0.72)',
+            maxTicksLimit: 5,
           },
           border: {
             display: false,
@@ -238,10 +314,15 @@ const GradientLinePage = () => {
         },
         y: {
           beginAtZero: true,
-          suggestedMax: 80,
           ticks: {
             color: 'rgba(51, 65, 85, 0.72)',
-            callback: (tickValue) => `${tickValue}%`,
+            callback: (tickValue) => {
+              const v = Number(tickValue);
+              if (v >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(1)}G`;
+              if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+              if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+              return v.toFixed(2);
+            },
           },
           grid: {
             color: 'rgba(148, 163, 184, 0.18)',
@@ -260,7 +341,7 @@ const GradientLinePage = () => {
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {chartSeries.map((series, index) => (
+          {promConfigs.map((series, index) => (
             <section
               key={series.id}
               className={`relative overflow-hidden rounded-4xl border border-white/10 bg-white/10 p-6 shadow-2xl shadow-blue-950/20 backdrop-blur-xl ${

@@ -5,9 +5,10 @@ import GradientLinePage from './components/GradientLinePage';
 import ReactFlowPage from './components/ReactFlowPage';
 import ResultPage from './result/App';
 import LicenseGeneratorPage from './components/LicenseGeneratorPage';
+import PrometheusRangeChartPage from './components/PrometheusRangeChartPage';
 
 function App() {
-  const [activePage, setActivePage] = useState<'dashboard' | 'deployments' | 'result' | 'gradient-line' | 'reactflow' | 'licenses'>('dashboard');
+  const [activePage, setActivePage] = useState<'dashboard' | 'deployments' | 'result' | 'gradient-line' | 'reactflow' | 'licenses' | 'range-chart'>('dashboard');
 
   return (
     <div className="w-screen pt-16">
@@ -79,6 +80,17 @@ function App() {
           >
             Licenses
           </button>
+          <button
+            type="button"
+            onClick={() => setActivePage('range-chart')}
+            className={`rounded-md px-4 py-2 text-sm font-medium ${
+              activePage === 'range-chart'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Range Chart
+          </button>
         </nav>
       </header>
 
@@ -88,6 +100,7 @@ function App() {
       {activePage === 'gradient-line' && <GradientLinePage />}
       {activePage === 'reactflow' && <ReactFlowPage />}
       {activePage === 'licenses' && <LicenseGeneratorPage />}
+      {activePage === 'range-chart' && <PrometheusRangeChartPage />}
     </div>
   );
 }

@@ -202,7 +202,7 @@ app.get('/api/metrics', async (req, res) => {
 // Custom PromQL query endpoint
 app.post('/api/query', async (req, res) => {
   try {
-    const { query, type = 'instant' } = req.body;
+    const { query, type = 'instant', start, end, step } = req.body;
     
     if (!query) {
       return res.status(400).json({ error: 'Query parameter is required' });
@@ -210,10 +210,10 @@ app.post('/api/query', async (req, res) => {
     
     let result;
     if (type === 'range') {
-      const end = Math.floor(Date.now() / 1000);
-      const start = end - 300;
-      const step = 15;
-      result = await queryPrometheusRange(query, start, end, step);
+      const rangeEnd = end ?? Math.floor(Date.now() / 1000);
+      const rangeStart = start ?? rangeEnd - 300;
+      const rangeStep = step ?? 15;
+      result = await queryPrometheusRange(query, rangeStart, rangeEnd, rangeStep);
     } else {
       result = await queryPrometheus(query);
     }

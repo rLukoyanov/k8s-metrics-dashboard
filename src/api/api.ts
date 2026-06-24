@@ -160,3 +160,24 @@ export const executePromQLQuery = async (
     throw new Error('Failed to execute PromQL query');
   }
 };
+
+/**
+ * Execute a PromQL range query with custom time range
+ */
+export const fetchPrometheusRange = async (
+  query: string,
+  start: number,
+  end: number,
+  step: number = 30,
+): Promise<PromQLResponse> => {
+  try {
+    const response = await axios.post<PromQLResponse>(
+      `${API_URL}/query`,
+      { query, type: 'range', start, end, step }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching Prometheus range:', error);
+    throw new Error('Failed to fetch Prometheus range');
+  }
+};

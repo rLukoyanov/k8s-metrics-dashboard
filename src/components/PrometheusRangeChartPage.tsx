@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   Chart as ChartJS,
   Filler,
@@ -13,6 +13,41 @@ import {
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 import { fetchPrometheusRange } from "../api/api";
+import {
+  addChart,
+  removeChart,
+  setChartData,
+  setChartLoading,
+  setEndDate,
+  setEndTime,
+  setStartDate,
+  setStartTime,
+  setStep,
+  updateChartQuery,
+} from "../store/chartsSlice";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
+
+ChartJS.register(LinearScale, PointElement, LineElement, ChartTooltip, Legend, Filler);
+
+const formatValue = (v: number) => {
+  if (v >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(1)}G`;
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+  return v.toFixed(2);
+};
+
+const formatTime = (ts: number) =>
+  new Date(ts * 1000).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+const DEFAULT_COLORS = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#8b5cf6", "#ec4899"];
+
+const dateToTimestamp = (dateStr: string, timeStr: string): number =>
+  Math.floor(new Date(`${dateStr}T${timeStr}:00`).getTime() / 1000);
 
 const generateMockSeries = (start: number, end: number, step: number) => {
   const count = Math.floor((end - start) / step) + 1;
@@ -39,77 +74,34 @@ const generateMockSeries = (start: number, end: number, step: number) => {
   });
 };
 
-ChartJS.register(LinearScale, PointElement, LineElement, ChartTooltip, Legend, Filler);
+interface SingleChartProps {
+  id: string;
+  promql: string;
+  series: { label: string; values: [number, string][] }[];
+  loading: boolean;
+  isMock: boolean;
+  startTs: number;
+  endTs: number;
+  step: number;
+  onQueryChange: (q: string) => void;
+  onRemove: () => void;
+  onFetch: () => void;
+}
 
-const formatValue = (v: number) => {
-  if (v >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(1)}G`;
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
-  return v.toFixed(2);
-};
-
-const formatTime = (ts: number) =>
-  new Date(ts * 1000).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-const DEFAULT_COLORS = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#8b5cf6", "#ec4899"];
-
-const dateToTimestamp = (dateStr: string, timeStr: string): number =>
-  Math.floor(new Date(`${dateStr}T${timeStr}:00`).getTime() / 1000);
-
-const formatDateInput = (d: Date): string => d.toISOString().slice(0, 10);
-
-const todayStr = () => formatDateInput(new Date());
-
-const PrometheusRangeChartPage = () => {
-  const [startDate, setStartDate] = useState(todayStr());
-  const [endDate, setEndDate] = useState(todayStr());
-  const [startTime, setStartTime] = useState("00:00");
-  const [endTime, setEndTime] = useState("23:59");
-  const [step, setStep] = useState(60);
-  const [promql, setPromql] = useState('container_cpu_usage_seconds_total');
-  const [series, setSeries] = useState<{ label: string; values: [number, string][] }[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [isMock, setIsMock] = useState(false);
+const SingleChart = ({
+  id,
+  promql,
+  series,
+  loading,
+  isMock,
+  startTs,
+  endTs,
+  step,
+  onQueryChange,
+  onRemove,
+  onFetch,
+}: SingleChartProps) => {
   const chartRef = useRef<any>(null);
-
-  const startTs = dateToTimestamp(startDate, startTime);
-  const endTs = dateToTimestamp(endDate, endTime);
-
-  const fetchData = useCallback(async () => {
-    if (!promql.trim()) return;
-
-    setLoading(true);
-    setError("");
-    setIsMock(false);
-    setSeries([]);
-
-    try {
-      const response = await fetchPrometheusRange(promql.trim(), startTs, endTs, step);
-      if (response.status !== "success" || !response.data?.result) {
-        throw new Error(response.error || "Query failed");
-      }
-
-      const result = response.data.result
-        .filter((r: any) => r.values?.length)
-        .map((r: any) => {
-          const label = Object.values(r.metric).filter(Boolean).join(" / ") || "unknown";
-          return { label, values: r.values as [number, string][] };
-        });
-
-      setSeries(result);
-    } catch {
-      setIsMock(true);
-      setSeries(generateMockSeries(startTs, endTs, step));
-    } finally {
-      setLoading(false);
-    }
-  }, [promql, startTs, endTs, step]);
 
   const chartData: ChartData<"line"> = {
     datasets: series.length
@@ -210,20 +202,99 @@ const PrometheusRangeChartPage = () => {
     },
   };
 
-  useEffect(() => { fetchData(); }, []); // initial fetch
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <input
+          type="text"
+          value={promql}
+          onChange={(e) => onQueryChange(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onFetch()}
+          placeholder="PromQL query"
+          className="flex-1 rounded-lg border border-white/10 bg-slate-800 px-3 py-1.5 text-sm text-white font-mono"
+        />
+        <button
+          onClick={onFetch}
+          disabled={loading}
+          className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+        >
+          {loading ? "..." : "Fetch"}
+        </button>
+        <button
+          onClick={onRemove}
+          className="rounded-lg bg-red-600/60 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
+        >
+          Remove
+        </button>
+        {isMock && <span className="text-xs text-amber-400">mock</span>}
+      </div>
+      <div className="h-[350px]">
+        <Line ref={chartRef} data={chartData} options={chartOptions} />
+      </div>
+    </div>
+  );
+};
+
+const PrometheusRangeChartPage = () => {
+  const dispatch = useAppDispatch();
+  const { timeRange, charts } = useAppSelector((s) => s.charts);
+
+  const startTs = dateToTimestamp(timeRange.startDate, timeRange.startTime);
+  const endTs = dateToTimestamp(timeRange.endDate, timeRange.endTime);
+
+  const fetchOne = useCallback(
+    async (id: string, promql: string) => {
+      if (!promql.trim()) return;
+      dispatch(setChartLoading({ id, loading: true }));
+      try {
+        const response = await fetchPrometheusRange(promql.trim(), startTs, endTs, timeRange.step);
+        if (response.status !== "success" || !response.data?.result) {
+          throw new Error(response.error || "Query failed");
+        }
+        const result = response.data.result
+          .filter((r: any) => r.values?.length)
+          .map((r: any) => {
+            const label = Object.values(r.metric).filter(Boolean).join(" / ") || "unknown";
+            return { label, values: r.values as [number, string][] };
+          });
+        dispatch(setChartData({ id, series: result }));
+      } catch {
+        dispatch(
+          setChartData({
+            id,
+            series: generateMockSeries(startTs, endTs, timeRange.step),
+            isMock: true,
+          }),
+        );
+      }
+    },
+    [dispatch, startTs, endTs, timeRange.step],
+  );
+
+  const fetchAll = useCallback(() => {
+    charts.forEach((c) => {
+      if (c.promql.trim()) fetchOne(c.id, c.promql);
+    });
+  }, [charts, fetchOne]);
+
+  useEffect(() => {
+    if (charts.length > 0 && charts.every((c) => c.series.length === 0)) {
+      fetchAll();
+    }
+  }, []);
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <h1 className="text-2xl font-bold text-white">Prometheus Range Chart</h1>
+        <h1 className="text-2xl font-bold text-white">Range Charts</h1>
 
         <div className="flex flex-wrap items-end gap-4 rounded-2xl border border-white/10 bg-white/5 p-4">
           <div className="flex flex-col gap-1">
             <label className="text-xs text-slate-400">Start Date</label>
             <input
               type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              value={timeRange.startDate}
+              onChange={(e) => dispatch(setStartDate(e.target.value))}
               className="rounded-lg border border-white/10 bg-slate-800 px-3 py-1.5 text-sm text-white"
             />
           </div>
@@ -231,8 +302,8 @@ const PrometheusRangeChartPage = () => {
             <label className="text-xs text-slate-400">Start Time</label>
             <input
               type="time"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
+              value={timeRange.startTime}
+              onChange={(e) => dispatch(setStartTime(e.target.value))}
               className="rounded-lg border border-white/10 bg-slate-800 px-3 py-1.5 text-sm text-white"
             />
           </div>
@@ -240,8 +311,8 @@ const PrometheusRangeChartPage = () => {
             <label className="text-xs text-slate-400">End Date</label>
             <input
               type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              value={timeRange.endDate}
+              onChange={(e) => dispatch(setEndDate(e.target.value))}
               className="rounded-lg border border-white/10 bg-slate-800 px-3 py-1.5 text-sm text-white"
             />
           </div>
@@ -249,8 +320,8 @@ const PrometheusRangeChartPage = () => {
             <label className="text-xs text-slate-400">End Time</label>
             <input
               type="time"
-              value={endTime}
-              onChange={(e) => setEndTime(e.target.value)}
+              value={timeRange.endTime}
+              onChange={(e) => dispatch(setEndTime(e.target.value))}
               className="rounded-lg border border-white/10 bg-slate-800 px-3 py-1.5 text-sm text-white"
             />
           </div>
@@ -258,51 +329,45 @@ const PrometheusRangeChartPage = () => {
             <label className="text-xs text-slate-400">Step (s)</label>
             <input
               type="number"
-              value={step}
+              value={timeRange.step}
               min={15}
               max={3600}
-              onChange={(e) => setStep(Math.max(15, Number(e.target.value)))}
+              onChange={(e) => dispatch(setStep(Math.max(15, Number(e.target.value))))}
               className="rounded-lg border border-white/10 bg-slate-800 px-3 py-1.5 text-sm text-white w-20"
             />
           </div>
-          <div className="flex flex-1 flex-col gap-1 min-w-[200px]">
-            <label className="text-xs text-slate-400">PromQL Query</label>
-            <input
-              type="text"
-              value={promql}
-              onChange={(e) => setPromql(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && fetchData()}
-              placeholder="e.g. container_cpu_usage_seconds_total"
-              className="rounded-lg border border-white/10 bg-slate-800 px-3 py-1.5 text-sm text-white w-full font-mono"
-            />
-          </div>
           <button
-            onClick={fetchData}
-            disabled={loading}
-            className="rounded-lg bg-blue-600 px-5 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            onClick={fetchAll}
+            className="rounded-lg bg-blue-600 px-5 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
           >
-            {loading ? "Loading..." : "Fetch"}
+            Fetch All
+          </button>
+          <button
+            onClick={() => dispatch(addChart())}
+            className="rounded-lg bg-emerald-600 px-5 py-1.5 text-sm font-medium text-white hover:bg-emerald-500"
+          >
+            + Add Chart
           </button>
         </div>
 
-        {error && (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-            {error}
-          </div>
-        )}
-
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="h-[500px]">
-            <Line ref={chartRef} data={chartData} options={chartOptions} />
-          </div>
+        <div className="grid grid-cols-1 gap-6">
+          {charts.map((chart) => (
+            <SingleChart
+              key={chart.id}
+              id={chart.id}
+              promql={chart.promql}
+              series={chart.series}
+              loading={chart.loading}
+              isMock={chart.isMock}
+              startTs={startTs}
+              endTs={endTs}
+              step={timeRange.step}
+              onQueryChange={(q) => dispatch(updateChartQuery({ id: chart.id, promql: q }))}
+              onRemove={() => dispatch(removeChart(chart.id))}
+              onFetch={() => fetchOne(chart.id, chart.promql)}
+            />
+          ))}
         </div>
-
-        {!loading && series.length > 0 && (
-          <p className="text-xs text-slate-500 flex items-center gap-2">
-            {isMock && <span className="text-amber-400">using mock data</span>}
-            Showing {series.length} series from {formatTime(startTs)} to {formatTime(endTs)} (step: {step}s)
-          </p>
-        )}
       </div>
     </main>
   );
